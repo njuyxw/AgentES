@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentes"
+version = "0.1.0"
+description = "Local-first, evidence-backed experience store for agents."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+  "pydantic>=2.6",
+  "PyYAML>=6.0",
+  "typer>=0.12",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+]
+build = [
+  "pyinstaller>=6.0",
+]
+
+[project.scripts]
+agentes = "agentes.cli:main"
+
+[tool.setuptools]
+packages = ["agentes"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

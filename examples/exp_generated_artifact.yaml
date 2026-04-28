@@ -1,0 +1,75 @@
+schema_version: 1
+id: exp_generated_artifact
+object_type: experience
+
+status: success
+confidence: medium
+
+task:
+  type: code_debugging
+  domain: typescript
+  project: demo
+  repo: demo-repo
+  summary: "Fix import error after schema update"
+
+problem:
+  symptoms:
+    - "Tests fail with Cannot find module './generated/client'"
+  failure_modes:
+    - "stale_generated_artifact"
+
+context:
+  environment:
+    package_manager: pnpm
+    language: typescript
+  constraints:
+    - "Do not change public API"
+
+actions:
+  summary: "Ran generator and reran tests"
+  commands:
+    - "pnpm openapi:generate"
+    - "pnpm test"
+
+outcome:
+  result: success
+  validation:
+    - ev_20260428_001
+  residual_issues: []
+
+diagnosis:
+  observations:
+    - "Generated client was missing"
+  hypotheses:
+    - "Schema update did not trigger code generation"
+  verified_facts:
+    - "After running generator, tests passed"
+  root_cause: "Stale generated artifact"
+
+reuse:
+  applies_when:
+    - "Schema or IDL changed"
+    - "Import error references generated code"
+    - "Repo has generator script"
+  avoid_when:
+    - "Generated files are intentionally not committed"
+    - "Import error is caused by package resolution"
+  required_checks:
+    - "Inspect package.json for generator script"
+    - "Confirm generated path is expected"
+    - "Run tests after generation"
+  validation_after_reuse:
+    - "Run relevant test suite"
+
+evidence:
+  refs:
+    - ev_20260428_001
+
+provenance:
+  source_run: run_20260428_001
+  created_by: agent
+
+lifecycle:
+  created_at: "2026-04-28T12:00:00Z"
+  updated_at: "2026-04-28T12:00:00Z"
+  last_validated_at: "2026-04-28T12:00:00Z"

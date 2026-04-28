@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgentES Minimal Design Specification</title>
+  <style>
+    :root {
+      --bg: #fbfbfc;
+      --fg: #1f2937;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --card: #ffffff;
+      --accent: #2563eb;
+      --accent-soft: #eff6ff;
+      --code-bg: #111827;
+      --code-fg: #e5e7eb;
+      --warn-bg: #fff7ed;
+      --warn-border: #fed7aa;
+      --ok-bg: #f0fdf4;
+      --ok-border: #bbf7d0;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      line-height: 1.65;
+      color: var(--fg);
+      background: var(--bg);
+    }
+
+    .page {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 48px 24px 96px;
+    }
+
+    header {
+      padding: 40px 32px;
+      background: linear-gradient(135deg, #eef2ff, #ffffff 55%);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      margin-bottom: 32px;
+    }
+
+    h1 {
+      font-size: 42px;
+      line-height: 1.15;
+      margin: 0 0 12px;
+      letter-spacing: -0.03em;
+    }
+
+    .subtitle {
+      font-size: 18px;
+      color: var(--muted);
+      max-width: 820px;
+      margin: 0;
+    }
+
+    h2 {
+      font-size: 28px;
+      margin: 44px 0 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h3 {
+      font-size: 21px;
+      margin: 28px 0 10px;
+    }
+
+    h4 {
+      font-size: 17px;
+      margin: 22px 0 8px;
+    }
+
+    p { margin: 10px 0; }
+
+    a { color: var(--accent); }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 22px 24px;
+      margin: 18px 0;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+    }
+
+    .note {
+      background: var(--accent-soft);
+      border-left: 4px solid var(--accent);
+      padding: 14px 16px;
+      border-radius: 12px;
+      margin: 18px 0;
+    }
+
+    .warning {
+      background: var(--warn-bg);
+      border: 1px solid var(--warn-border);
+      padding: 14px 16px;
+      border-radius: 12px;
+      margin: 18px 0;
+    }
+
+    .success {
+      background: var(--ok-bg);
+      border: 1px solid var(--ok-border);
+      padding: 14px 16px;
+      border-radius: 12px;
+      margin: 18px 0;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      background: #f3f4f6;
+      border-radius: 6px;
+      padding: 2px 5px;
+      font-size: 0.92em;
+    }
+
+    pre {
+      margin: 14px 0 20px;
+      padding: 18px 20px;
+      overflow-x: auto;
+      color: var(--code-fg);
+      background: var(--code-bg);
+      border-radius: 14px;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    pre code {
+      background: transparent;
+      color: inherit;
+      padding: 0;
+      font-size: inherit;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0 24px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      background: #f9fafb;
+      font-weight: 650;
+    }
+
+    tr:last-child td { border-bottom: none; }
+
+    ul, ol { padding-left: 24px; }
+    li { margin: 5px 0; }
+
+    .toc {
+      columns: 2;
+      column-gap: 32px;
+      margin: 12px 0 8px;
+    }
+
+    .toc a {
+      display: block;
+      margin: 4px 0;
+      text-decoration: none;
+    }
+
+    .tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #eef2ff;
+      color: #3730a3;
+      font-size: 12px;
+      font-weight: 650;
+      margin-right: 6px;
+    }
+
+    .small { color: var(--muted); font-size: 14px; }
+
+    @media (max-width: 760px) {
+      .page { padding: 28px 16px 64px; }
+      header { padding: 28px 20px; }
+      h1 { font-size: 32px; }
+      .toc { columns: 1; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <div class="tag">Design Spec</div>
+      <div class="tag">MVP</div>
+      <div class="tag">Agent Experience Store</div>
+      <h1>AgentES Minimal Design Specification</h1>
+      <p class="subtitle">一份面向工程实现的 Agent Experience Store 设计方案。本文删除讨论过程中的冗余内容，保留背景、目标、核心抽象、数据模型、CLI、目录结构、实现计划和验收标准，便于程序员直接开始编码。</p>
+    </header>
+
+    <section class="card">
+      <h2 id="toc">目录</h2>
+      <nav class="toc">
+        <a href="#background">1. 背景与问题</a>
+        <a href="#positioning">2. AgentES 定位</a>
+        <a href="#scope">3. MVP 范围</a>
+        <a href="#principles">4. 设计原则</a>
+        <a href="#objects">5. 核心对象</a>
+        <a href="#storage">6. 存储结构</a>
+        <a href="#schema">7. 数据模型与 Schema</a>
+        <a href="#cli">8. CLI 设计</a>
+        <a href="#workflow">9. Agent 使用流程</a>
+        <a href="#skill">10. Skill 设计</a>
+        <a href="#implementation">11. 代码结构与实现计划</a>
+        <a href="#tests">12. 测试计划</a>
+        <a href="#acceptance">13. 验收标准</a>
+        <a href="#roadmap">14. 后续路线</a>
+      </nav>
+    </section>
+
+    <section id="background">
+      <h2>1. 背景与问题</h2>
+      <p>当前 coding agent、research agent、DevOps agent 等工具型 agent 已经能够执行复杂任务：读取文件、调用 shell、修改代码、运行测试、总结结果。但这些执行过程大多是一次性的。agent 完成任务后，历史上下文通常只以聊天记录、日志、临时文件或不可结构化的 memory 形式存在。</p>
+      <p>这种方式带来几个问题：</p>
+      <ul>
+        <li>历史经验难以复用。agent 下次遇到类似问题时，不知道过去做过什么。</li>
+        <li>经验缺乏证据。即使保存了总结，也很难判断它是否真实、是否被验证过。</li>
+        <li>经验容易误用。过去成功的方法可能只适用于特定项目、工具链或环境。</li>
+        <li>失败经验没有被系统化保留。agent 会重复尝试已经失败过的策略。</li>
+        <li>普通 RAG 或向量记忆只解决“相似文本检索”，没有解决“经验能不能安全复用”。</li>
+      </ul>
+      <p>AgentES 的目标是为 agent 提供一个最小但完整的经验存储层，让 agent 不只是保存历史，而是能够将历史转化为有证据、有边界、可检索、可验证、可复用的经验。</p>
+    </section>
+
+    <section id="positioning">
+      <h2>2. AgentES 定位</h2>
+      <div class="note">
+        <strong>AgentES = Agent Experience Store。</strong> 它是一个本地优先、证据感知、由 skill 引导的 agent 经验存储系统。
+      </div>
+      <p>AgentES 不是底层 POSIX 文件系统，也不是单纯的向量数据库。它位于 agent runtime 之上，提供语义层经验管理能力。</p>
+      <pre><code>Agent Runtime / Coding Agent / Research Agent
+                │
+                ▼
+AgentES: Experience, Evidence, Trace, Skill, Reuse Protocol
+                │
+                ▼
+Local Filesystem + SQLite + JSONL/YAML/Markdown</code></pre>
+      <p>AgentES 要支持的核心闭环是：</p>
+      <pre><code>agent 执行任务
+→ 记录 run / trace / evidence
+→ 提炼 experience
+→ 下次任务搜索相关 experience
+→ 检查 evidence 和 reuse boundary
+→ validate-use
+→ 复用
+→ 写回复用结果</code></pre>
+      <p>AgentES 的最小版本重点不是“存很多东西”，而是把经验复用协议跑通。</p>
+    </section>
+
+    <section id="scope">
+      <h2>3. MVP 范围</h2>
+      <h3>3.1 MVP 要做什么</h3>
+      <ul>
+        <li>提供本地目录 <code>.agentes/</code> 作为经验仓库。</li>
+        <li>使用 SQLite 存储 metadata、索引、关系和搜索表。</li>
+        <li>使用 YAML / Markdown / JSONL 存储可读对象。</li>
+        <li>支持 Run、Trace、Evidence、Experience、Skill 五类对象。</li>
+        <li>支持经验导入、搜索、打开、适用性验证、适配 checklist、复用记录。</li>
+        <li>提供一个默认 agent skill，告诉 agent 如何使用 AgentES。</li>
+      </ul>
+
+      <h3>3.2 MVP 不做什么</h3>
+      <div class="warning">
+        第一版不要做 FUSE、分布式、多租户、复杂权限、自动 redaction、图数据库、复杂 vector DB、Web UI、自动 pattern promotion 或 skill 自动演化。
+      </div>
+      <p>MVP 推荐实现为：</p>
+      <pre><code>Python + Typer CLI + SQLite FTS5 + Pydantic + YAML + JSONL + local filesystem</code></pre>
+    </section>
+
+    <section id="principles">
+      <h2>4. 设计原则</h2>
+      <h3>4.1 经验必须证据化</h3>
+      <p>没有 evidence 的内容不能成为高置信经验。agent 的自我总结不是证据，命令结果、测试结果、diff、metric、人类反馈才是证据。</p>
+
+      <h3>4.2 经验必须有复用边界</h3>
+      <p>每条 experience 必须包含：</p>
+      <pre><code>applies_when
+avoid_when
+required_checks
+validation_after_reuse</code></pre>
+
+      <h3>4.3 区分观察、假设和验证事实</h3>
+      <p>经验里必须区分：</p>
+      <pre><code>observations: 看到的现象
+hypotheses: 可能原因
+verified_facts: 有 evidence 支撑的事实</code></pre>
+
+      <h3>4.4 失败经验同样重要</h3>
+      <p>失败、警告、废弃经验应该被保留，用来避免重复试错。</p>
+
+      <h3>4.5 渐进式读取</h3>
+      <p>agent 默认不应该读取所有 raw trace，而应该按层读取：</p>
+      <pre><code>search card → summary → reuse boundary → evidence → trace slice → raw trace</code></pre>
+
+      <h3>4.6 经验复用前必须 validate-use</h3>
+      <p>agent 不能因为文本相似就照搬经验。必须先检查当前 context 是否满足 applies_when，是否触发 avoid_when，required_checks 是否完成。</p>
+    </section>
+
+    <section id="objects">
+      <h2>5. 核心对象</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>对象</th>
+            <th>用途</th>
+            <th>MVP 存储形式</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Run</strong></td>
+            <td>一次 agent 任务执行，记录任务、环境、状态、输入输出。</td>
+            <td>YAML manifest + SQLite metadata</td>
+          </tr>
+          <tr>
+            <td><strong>Trace</strong></td>
+            <td>一次 run 的步骤级结构化日志。</td>
+            <td>JSONL</td>
+          </tr>
+          <tr>
+            <td><strong>Evidence</strong></td>
+            <td>支撑经验结论的证据，例如测试通过、命令结果、diff。</td>
+            <td>YAML manifest + blob files</td>
+          </tr>
+          <tr>
+            <td><strong>Experience</strong></td>
+            <td>可复用经验，包含问题、行动、结果、诊断、复用边界和证据引用。</td>
+            <td>YAML manifest + Markdown views + SQLite FTS</td>
+          </tr>
+          <tr>
+            <td><strong>Skill</strong></td>
+            <td>告诉 agent 如何搜索、验证、复用和写回经验。</td>
+            <td>Markdown</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="storage">
+      <h2>6. 存储结构</h2>
+      <p>初始化后，项目根目录下创建 <code>.agentes/</code>：</p>
+      <pre><code>.agentes/
+  agentes.db
+
+  objects/
+    runs/
+      run_20260428_001/
+        manifest.yaml
+        input.md
+        output.md
+
+    traces/
+      trace_20260428_001.jsonl
+
+    evidence/
+      ev_20260428_001.yaml
+
+    experiences/
+      exp_20260428_001/
+        manifest.yaml
+        summary.md
+        reuse.md
+        diagnosis.md
+
+    blobs/
+      stdout/
+      stderr/
+      diffs/
+
+    skills/
+      global_experience_retrieval.md
+
+  inbox/
+    unreviewed_experiences/
+
+  tmp/</code></pre>
+      <p>设计建议：</p>
+      <ul>
+        <li>SQLite 负责查询、索引和关系。</li>
+        <li>文件系统负责保存可读对象和大文本。</li>
+        <li>经验对象既要 machine-readable，也要 human-readable。</li>
+      </ul>
+    </section>
+
+    <section id="schema">
+      <h2>7. 数据模型与 Schema</h2>
+
+      <h3>7.1 SQLite Tables</h3>
+      <h4>runs</h4>
+      <pre><code>CREATE TABLE runs (
+  id TEXT PRIMARY KEY,
+  task_type TEXT,
+  task_summary TEXT,
+  status TEXT,
+  project TEXT,
+  repo TEXT,
+  started_at TEXT,
+  finished_at TEXT,
+  manifest_path TEXT
+);</code></pre>
+
+      <h4>traces</h4>
+      <pre><code>CREATE TABLE traces (
+  id TEXT PRIMARY KEY,
+  run_id TEXT,
+  path TEXT,
+  created_at TEXT,
+  FOREIGN KEY(run_id) REFERENCES runs(id)
+);</code></pre>
+
+      <h4>evidence</h4>
+      <pre><code>CREATE TABLE evidence (
+  id TEXT PRIMARY KEY,
+  run_id TEXT,
+  type TEXT,
+  claim TEXT,
+  strength TEXT,
+  path TEXT,
+  created_at TEXT,
+  FOREIGN KEY(run_id) REFERENCES runs(id)
+);</code></pre>
+
+      <h4>experiences</h4>
+      <pre><code>CREATE TABLE experiences (
+  id TEXT PRIMARY KEY,
+  status TEXT,
+  confidence TEXT,
+  task_type TEXT,
+  domain TEXT,
+  project TEXT,
+  repo TEXT,
+  title TEXT,
+  summary TEXT,
+  problem TEXT,
+  diagnosis TEXT,
+  applies_when TEXT,
+  avoid_when TEXT,
+  required_checks TEXT,
+  evidence_count INTEGER,
+  created_at TEXT,
+  updated_at TEXT,
+  last_validated_at TEXT,
+  manifest_path TEXT
+);</code></pre>
+
+      <h4>experience_evidence</h4>
+      <pre><code>CREATE TABLE experience_evidence (
+  experience_id TEXT,
+  evidence_id TEXT,
+  PRIMARY KEY (experience_id, evidence_id),
+  FOREIGN KEY(experience_id) REFERENCES experiences(id),
+  FOREIGN KEY(evidence_id) REFERENCES evidence(id)
+);</code></pre>
+
+      <h4>reuse_events</h4>
+      <pre><code>CREATE TABLE reuse_events (
+  id TEXT PRIMARY KEY,
+  experience_id TEXT,
+  run_id TEXT,
+  result TEXT,
+  notes TEXT,
+  created_at TEXT,
+  FOREIGN KEY(experience_id) REFERENCES experiences(id),
+  FOREIGN KEY(run_id) REFERENCES runs(id)
+);</code></pre>
+
+      <h4>experience_fts</h4>
+      <pre><code>CREATE VIRTUAL TABLE experience_fts USING fts5(
+  experience_id,
+  title,
+  summary,
+  problem,
+  diagnosis,
+  applies_when,
+  avoid_when,
+  required_checks
+);</code></pre>
+
+      <h3>7.2 Experience Manifest</h3>
+      <pre><code>schema_version: 1
+id: exp_20260428_001
+object_type: experience
+
+status: success
+confidence: medium
+
+task:
+  type: code_debugging
+  domain: typescript
+  project: demo
+  repo: demo-repo
+  summary: "Fix import error after schema update"
+
+problem:
+  symptoms:
+    - "Tests fail with Cannot find module './generated/client'"
+  failure_modes:
+    - "stale_generated_artifact"
+
+context:
+  environment:
+    package_manager: pnpm
+    language: typescript
+  constraints:
+    - "Do not change public API"
+
+actions:
+  summary: "Ran generator and reran tests"
+  commands:
+    - "pnpm openapi:generate"
+    - "pnpm test"
+
+outcome:
+  result: success
+  validation:
+    - ev_20260428_001
+  residual_issues: []
+
+diagnosis:
+  observations:
+    - "Generated client was missing"
+  hypotheses:
+    - "Schema update did not trigger code generation"
+  verified_facts:
+    - "After running generator, tests passed"
+  root_cause: "Stale generated artifact"
+
+reuse:
+  applies_when:
+    - "Schema or IDL changed"
+    - "Import error references generated code"
+    - "Repo has generator script"
+  avoid_when:
+    - "Generated files are intentionally not committed"
+    - "Import error is caused by package resolution"
+  required_checks:
+    - "Inspect package.json for generator script"
+    - "Confirm generated path is expected"
+    - "Run tests after generation"
+  validation_after_reuse:
+    - "Run relevant test suite"
+
+evidence:
+  refs:
+    - ev_20260428_001
+
+provenance:
+  source_run: run_20260428_001
+  created_by: agent
+
+lifecycle:
+  created_at: "2026-04-28T12:00:00Z"
+  updated_at: "2026-04-28T12:00:00Z"
+  last_validated_at: "2026-04-28T12:00:00Z"</code></pre>
+
+      <h3>7.3 Evidence Manifest</h3>
+      <pre><code>schema_version: 1
+id: ev_20260428_001
+object_type: evidence
+
+type: command_result
+claim: "pnpm test passed after generation"
+strength: strong
+
+source:
+  run: run_20260428_001
+  trace_step: 4
+
+data:
+  command: "pnpm test"
+  exit_code: 0
+  stdout_path: ".agentes/objects/blobs/stdout/ev_20260428_001.out"
+  stderr_path: ".agentes/objects/blobs/stderr/ev_20260428_001.err"
+
+created_at: "2026-04-28T12:00:00Z"</code></pre>
+
+      <h3>7.4 Run Manifest</h3>
+      <pre><code>schema_version: 1
+id: run_20260428_001
+object_type: run
+
+task:
+  type: code_debugging
+  summary: "Fix import error after schema update"
+  input_path: ".agentes/objects/runs/run_20260428_001/input.md"
+
+context:
+  project: demo
+  repo: demo-repo
+
+status: success
+
+trace:
+  id: trace_20260428_001
+  path: ".agentes/objects/traces/trace_20260428_001.jsonl"
+
+created_at: "2026-04-28T12:00:00Z"
+finished_at: "2026-04-28T12:10:00Z"</code></pre>
+
+      <h3>7.5 Trace JSONL</h3>
+      <pre><code>{"step":1,"type":"note","summary":"Started debugging import error","timestamp":"2026-04-28T12:00:00Z"}
+{"step":2,"type":"command","command":"pnpm test","exit_code":1,"summary":"Tests failed with missing generated client","timestamp":"2026-04-28T12:01:00Z"}
+{"step":3,"type":"command","command":"pnpm openapi:generate","exit_code":0,"summary":"Generated client","timestamp":"2026-04-28T12:03:00Z"}
+{"step":4,"type":"command","command":"pnpm test","exit_code":0,"summary":"Tests passed","timestamp":"2026-04-28T12:05:00Z"}</code></pre>
+
+      <h3>7.6 Current Context</h3>
+      <p><code>validate-use</code> 使用当前任务上下文判断经验是否适用。</p>
+      <pre><code>task_type: code_debugging
+domain: typescript
+project: demo
+repo: demo-repo
+symptoms:
+  - "Cannot find module './generated/client'"
+environment:
+  package_manager: pnpm
+  language: typescript
+observed:
+  - "OpenAPI schema changed"
+  - "package.json has openapi:generate script"</code></pre>
+    </section>
+
+    <section id="cli">
+      <h2>8. CLI 设计</h2>
+      <p>推荐命令名为 <code>agentes</code>。CLI 是 agent 和程序员都能使用的主接口。</p>
+
+      <h3>8.1 初始化</h3>
+      <pre><code>agentes init</code></pre>
+      <p>创建 <code>.agentes/</code> 目录、SQLite schema、默认 skill。</p>
+
+      <h3>8.2 Run</h3>
+      <pre><code>agentes run start \
+  --task-type code_debugging \
+  --summary "Fix import error after schema update" \
+  --project demo \
+  --repo demo-repo
+
+agentes run finish run_20260428_001 --status success</code></pre>
+
+      <h3>8.3 Trace</h3>
+      <pre><code>agentes trace add run_20260428_001 \
+  --type command \
+  --command "pnpm test" \
+  --exit-code 1 \
+  --summary "Tests failed with missing generated client" \
+  --stdout stdout.txt \
+  --stderr stderr.txt</code></pre>
+
+      <h3>8.4 Evidence</h3>
+      <pre><code>agentes evidence create run_20260428_001 \
+  --type command_result \
+  --claim "pnpm test passed after generation" \
+  --strength strong \
+  --command "pnpm test" \
+  --exit-code 0 \
+  --stdout stdout.txt \
+  --stderr stderr.txt</code></pre>
+
+      <h3>8.5 Experience Import</h3>
+      <pre><code>agentes experience import examples/exp_generated_artifact.yaml</code></pre>
+      <p>第一版只需要支持从 YAML 导入 experience。agent 可以生成 YAML，然后调用 import。</p>
+
+      <h3>8.6 Experience Search</h3>
+      <pre><code>agentes experience search \
+  --query "import error generated client schema update" \
+  --task-type code_debugging \
+  --status success \
+  --min-confidence low</code></pre>
+      <p>输出 compact search cards，包括 id、title、status、confidence、evidence_count、下一步建议。</p>
+
+      <h3>8.7 Experience Open</h3>
+      <pre><code>agentes experience open exp_20260428_001 --summary
+agentes experience open exp_20260428_001 --reuse
+agentes experience open exp_20260428_001 --evidence
+agentes experience open exp_20260428_001 --full</code></pre>
+
+      <h3>8.8 Validate Use</h3>
+      <pre><code>agentes experience validate-use exp_20260428_001 \
+  --context examples/context_generated_artifact.yaml</code></pre>
+      <p>输出 experience 对当前 context 的适用性、风险、匹配条件、未完成检查项和建议。</p>
+
+      <h3>8.9 Adapt</h3>
+      <pre><code>agentes experience adapt exp_20260428_001 \
+  --context examples/context_generated_artifact.yaml</code></pre>
+      <p>把经验转换成当前任务下的 checklist。agent 应该使用 checklist，而不是直接复制历史命令。</p>
+
+      <h3>8.10 Reuse Record</h3>
+      <pre><code>agentes reuse record \
+  --experience exp_20260428_001 \
+  --run run_20260428_002 \
+  --result success \
+  --notes "Worked after adapting generator command"</code></pre>
+
+      <h3>8.11 Skill</h3>
+      <pre><code>agentes skill open global_experience_retrieval</code></pre>
+    </section>
+
+    <section id="workflow">
+      <h2>9. Agent 使用流程</h2>
+      <p>AgentES 的标准使用流程：</p>
+      <ol>
+        <li>agent 接收任务。</li>
+        <li>创建当前 run。</li>
+        <li>记录关键 trace。</li>
+        <li>搜索相关成功经验和失败经验。</li>
+        <li>打开候选经验的 reuse 和 evidence。</li>
+        <li>使用 validate-use 判断适用性。</li>
+        <li>使用 adapt 生成本地 checklist。</li>
+        <li>agent 执行任务并验证结果。</li>
+        <li>记录 reuse result。</li>
+        <li>如果产生新经验，写 experience YAML 并 import。</li>
+      </ol>
+      <pre><code>agentes init
+
+RUN=$(agentes run start \
+  --task-type code_debugging \
+  --summary "Fix generated client import error" \
+  --project demo \
+  --repo demo-repo)
+
+agentes experience search \
+  --query "import error generated client schema update" \
+  --task-type code_debugging
+
+agentes experience open exp_generated_artifact --reuse
+agentes experience open exp_generated_artifact --evidence
+
+agentes experience validate-use exp_generated_artifact \
+  --context current_context.yaml
+
+agentes experience adapt exp_generated_artifact \
+  --context current_context.yaml
+
+# agent acts and validates locally
+
+agentes reuse record \
+  --experience exp_generated_artifact \
+  --run "$RUN" \
+  --result success</code></pre>
+    </section>
+
+    <section id="skill">
+      <h2>10. Skill 设计</h2>
+      <p>默认 skill 应该放在 <code>.agentes/objects/skills/global_experience_retrieval.md</code>。它告诉 agent 如何使用 AgentES。</p>
+      <pre><code># Skill: Using AgentES
+
+AgentES stores evidence-backed experiences from prior agent runs.
+
+## Rules
+
+1. Do not reuse an experience based only on title or summary.
+2. Before using an experience, inspect reuse and evidence.
+3. Search negative or failed experiences when planning a risky strategy.
+4. Validate applicability with `agentes experience validate-use`.
+5. Convert experience into a checklist; do not copy old commands blindly.
+6. After use, record the outcome with `agentes reuse record`.
+7. If a new reusable lesson was learned, create an experience YAML and import it.
+
+## Standard Flow
+
+1. Classify the task.
+2. Search experiences:
+
+```bash
+agentes experience search --query "&lt;task symptoms&gt;" --task-type "&lt;type&gt;"
+```
+
+3. Open relevant experience:
+
+```bash
+agentes experience open &lt;id&gt; --reuse
+agentes experience open &lt;id&gt; --evidence
+```
+
+4. Validate:
+
+```bash
+agentes experience validate-use &lt;id&gt; --context current_context.yaml
+```
+
+5. Adapt:
+
+```bash
+agentes experience adapt &lt;id&gt; --context current_context.yaml
+```
+
+6. Act and validate locally.
+
+7. Record reuse:
+
+```bash
+agentes reuse record --experience &lt;id&gt; --run &lt;run_id&gt; --result success|failure|partial
+```
+</code></pre>
+      <p>这个 skill 是 AgentES 与普通文件夹或 RAG 的关键区别：它强制 agent 按协议使用经验，而不是只做文本检索。</p>
+    </section>
+
+    <section id="implementation">
+      <h2>11. 代码结构与实现计划</h2>
+
+      <h3>11.1 推荐技术栈</h3>
+      <pre><code>Language: Python
+CLI: Typer
+DB: SQLite + FTS5
+Schema validation: Pydantic
+YAML: PyYAML or ruamel.yaml
+Tests: pytest</code></pre>
+
+      <h3>11.2 项目结构</h3>
+      <pre><code>agentes/
+  agentes/
+    __init__.py
+    cli.py
+    db.py
+    models.py
+    storage.py
+    search.py
+    validate.py
+    render.py
+    skill.py
+    ids.py
+  skills/
+    global_experience_retrieval.md
+  examples/
+    exp_generated_artifact.yaml
+    context_generated_artifact.yaml
+    run_demo.sh
+  tests/
+  pyproject.toml
+  README.md</code></pre>
+
+      <h3>11.3 模块职责</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>模块</th>
+            <th>职责</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td><code>cli.py</code></td><td>Typer CLI 入口和命令注册。</td></tr>
+          <tr><td><code>db.py</code></td><td>SQLite 连接、建表、插入、查询、FTS 更新。</td></tr>
+          <tr><td><code>models.py</code></td><td>Pydantic models：Run、TraceEvent、Evidence、Experience、CurrentContext、ReuseEvent。</td></tr>
+          <tr><td><code>storage.py</code></td><td>仓库路径解析、目录创建、YAML/JSONL 读写、blob copy。</td></tr>
+          <tr><td><code>search.py</code></td><td>FTS 搜索、过滤、排序、search card 生成。</td></tr>
+          <tr><td><code>validate.py</code></td><td>validate-use、keyword matching、risk scoring、adapt checklist。</td></tr>
+          <tr><td><code>render.py</code></td><td>CLI 输出格式化。</td></tr>
+          <tr><td><code>skill.py</code></td><td>默认 skill 安装和读取。</td></tr>
+          <tr><td><code>ids.py</code></td><td>生成 run、trace、evidence、experience、reuse event ID。</td></tr>
+        </tbody>
+      </table>
+
+      <h3>11.4 实现阶段</h3>
+      <h4>Phase 1: 项目骨架与 init</h4>
+      <ul>
+        <li>创建 <code>pyproject.toml</code>。</li>
+        <li>实现 Typer CLI。</li>
+        <li>实现 <code>agentes init</code>。</li>
+        <li>创建目录结构和 SQLite schema。</li>
+      </ul>
+
+      <h4>Phase 2: Run + Trace</h4>
+      <ul>
+        <li>实现 <code>run start</code>、<code>run finish</code>。</li>
+        <li>实现 <code>trace add</code>。</li>
+        <li>支持 stdout/stderr blob copy。</li>
+      </ul>
+
+      <h4>Phase 3: Evidence</h4>
+      <ul>
+        <li>实现 Evidence model。</li>
+        <li>实现 <code>evidence create</code>。</li>
+        <li>写 YAML manifest 和 SQLite metadata。</li>
+      </ul>
+
+      <h4>Phase 4: Experience Import + Index</h4>
+      <ul>
+        <li>实现 Experience model。</li>
+        <li>实现 <code>experience import</code>。</li>
+        <li>写对象目录、插入 SQLite、建立 evidence edge、更新 FTS。</li>
+      </ul>
+
+      <h4>Phase 5: Search + Open</h4>
+      <ul>
+        <li>实现 FTS search。</li>
+        <li>实现 <code>experience open --summary|--reuse|--evidence|--full</code>。</li>
+        <li>输出 compact search card。</li>
+      </ul>
+
+      <h4>Phase 6: Validate-use + Adapt</h4>
+      <ul>
+        <li>实现 CurrentContext model。</li>
+        <li>实现基于 token overlap 的 applies_when / avoid_when 匹配。</li>
+        <li>输出 applicability、transfer_risk、matched conditions、required checks 和 recommendation。</li>
+        <li>实现 adapt checklist。</li>
+      </ul>
+
+      <h4>Phase 7: Reuse Record</h4>
+      <ul>
+        <li>实现 <code>reuse record</code>。</li>
+        <li>更新 reuse_events。</li>
+        <li>更新 experience 的 last_validated_at。</li>
+        <li>搜索和打开时展示 reuse stats。</li>
+      </ul>
+
+      <h4>Phase 8: Skill + Examples + README</h4>
+      <ul>
+        <li>内置默认 skill。</li>
+        <li>实现 <code>skill open</code>。</li>
+        <li>提供 demo experience、demo context、run_demo.sh。</li>
+        <li>写 README quickstart。</li>
+      </ul>
+    </section>
+
+    <section id="tests">
+      <h2>12. 测试计划</h2>
+      <p>MVP 至少包含以下测试：</p>
+      <pre><code>test_init_creates_store
+test_run_start_finish
+test_trace_add_appends_jsonl
+test_evidence_create
+test_experience_import
+test_experience_search
+test_experience_open_reuse
+test_experience_open_evidence
+test_validate_use_high_applicability
+test_validate_use_avoid_condition
+test_adapt_outputs_checklist
+test_reuse_record</code></pre>
+      <p>测试目标不是追求复杂覆盖率，而是保证完整闭环稳定。</p>
+    </section>
+
+    <section id="acceptance">
+      <h2>13. 验收标准</h2>
+      <p>当下面这段流程可以跑通，Minimal AgentES 就达到第一版验收标准：</p>
+      <pre><code>agentes init
+
+RUN=$(agentes run start \
+  --task-type code_debugging \
+  --summary "Fix generated client import error" \
+  --project demo \
+  --repo demo-repo)
+
+agentes trace add "$RUN" \
+  --type command \
+  --command "pnpm test" \
+  --exit-code 1 \
+  --summary "Tests failed with missing generated client"
+
+EV=$(agentes evidence create "$RUN" \
+  --type command_result \
+  --claim "Tests passed after regenerating generated client" \
+  --strength strong \
+  --command "pnpm test" \
+  --exit-code 0)
+
+agentes experience import examples/exp_generated_artifact.yaml
+
+agentes experience search \
+  --query "import error generated client schema update" \
+  --task-type code_debugging
+
+agentes experience open exp_generated_artifact --reuse
+agentes experience open exp_generated_artifact --evidence
+
+agentes experience validate-use exp_generated_artifact \
+  --context examples/context_generated_artifact.yaml
+
+agentes experience adapt exp_generated_artifact \
+  --context examples/context_generated_artifact.yaml
+
+agentes reuse record \
+  --experience exp_generated_artifact \
+  --run "$RUN" \
+  --result success</code></pre>
+      <div class="success">
+        <strong>核心验收点：</strong>AgentES 必须完成 search → inspect evidence → validate applicability → adapt → record reuse 的闭环。
+      </div>
+    </section>
+
+    <section id="roadmap">
+      <h2>14. 后续路线</h2>
+      <h3>14.1 v1.1</h3>
+      <ul>
+        <li>增加失败经验搜索和 <code>--include-negative</code>。</li>
+        <li>增加 search ranking：evidence_count、confidence、last_validated_at boost。</li>
+        <li>增加 <code>experience deprecate</code>。</li>
+        <li>增加 <code>evidence open</code>。</li>
+      </ul>
+
+      <h3>14.2 v1.2</h3>
+      <ul>
+        <li>增加 embedding search，但保留 FTS 和 metadata filters。</li>
+        <li>增加 conflict detection。</li>
+        <li>增加 trace slice。</li>
+        <li>增加 sensitivity 字段和简单 redaction 提醒。</li>
+      </ul>
+
+      <h3>14.3 v2</h3>
+      <ul>
+        <li>Pattern promotion：从多个 experience 归纳 pattern。</li>
+        <li>Skill versioning：skill 可评估、可废弃。</li>
+        <li>Graph index：经验、证据、run、pattern、skill 的关系查询。</li>
+        <li>与底层 agent filesystem / sandbox / runtime 集成。</li>
+      </ul>
+
+      <h3>14.4 最终方向</h3>
+      <p>AgentES 长期可以发展为 agent 的经验操作层：既能记录执行历史，又能提炼可复用经验，并通过 skill 约束 agent 正确使用经验。</p>
+      <pre><code>history storage → evidence-backed experience → reusable pattern → skill-guided behavior</code></pre>
+    </section>
+  </main>
+</body>
+</html>

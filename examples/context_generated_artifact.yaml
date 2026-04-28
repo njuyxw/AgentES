@@ -1,0 +1,14 @@
+task_type: code_debugging
+domain: typescript
+project: demo
+repo: demo-repo
+symptoms:
+  - "Cannot find module './generated/client'"
+  - "Import error references generated code"
+environment:
+  package_manager: pnpm
+  language: typescript
+observed:
+  - "OpenAPI schema changed"
+  - "package.json has openapi:generate script"
+  - "Generated path is expected"
