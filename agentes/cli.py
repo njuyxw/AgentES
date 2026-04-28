@@ -308,10 +308,17 @@ def experience_search(
     query: str = typer.Option("", "--query"),
     task_type: Optional[str] = typer.Option(None, "--task-type"),
     status: Optional[str] = typer.Option(None, "--status"),
+    include_negative: bool = typer.Option(False, "--include-negative", help="Include failure, partial, and warning experiences."),
+    negative_only: bool = typer.Option(False, "--negative-only", help="Search only failure, partial, and warning experiences."),
+    warning: bool = typer.Option(False, "--warning", help="Search warning experiences only."),
+    failure_mode: Optional[str] = typer.Option(None, "--failure-mode", help="Filter by failure mode text in problem/diagnosis/reuse fields."),
     min_confidence: str = typer.Option("low", "--min-confidence"),
     limit: int = typer.Option(10, "--limit", min=1, max=50),
 ) -> None:
     """Search indexed experiences."""
+    if sum(1 for item in [bool(status), negative_only, warning] if item) > 1:
+        typer.echo("Choose only one of --status, --negative-only, or --warning.", err=True)
+        raise typer.Exit(code=1)
     store = get_store_or_exit()
     with db.connect(store) as conn:
         rows = search_experiences(
@@ -319,6 +326,10 @@ def experience_search(
             query=query,
             task_type=task_type,
             status=status,
+            include_negative=include_negative,
+            negative_only=negative_only,
+            warning=warning,
+            failure_mode=failure_mode,
             min_confidence=min_confidence,
             limit=limit,
         )
@@ -481,15 +492,26 @@ def session_search(
     query: str = typer.Option(..., "--query"),
     task_type: Optional[str] = typer.Option(None, "--task-type"),
     status: Optional[str] = typer.Option(None, "--status"),
+    include_negative: bool = typer.Option(False, "--include-negative", help="Include failure, partial, and warning experiences."),
+    negative_only: bool = typer.Option(False, "--negative-only", help="Search only failure, partial, and warning experiences."),
+    warning: bool = typer.Option(False, "--warning", help="Search warning experiences only."),
+    failure_mode: Optional[str] = typer.Option(None, "--failure-mode", help="Filter by failure mode text in problem/diagnosis/reuse fields."),
     min_confidence: str = typer.Option("low", "--min-confidence"),
     limit: int = typer.Option(10, "--limit", min=1, max=50),
 ) -> None:
     """Search experiences from the current session store."""
+    if sum(1 for item in [bool(status), negative_only, warning] if item) > 1:
+        typer.echo("Choose only one of --status, --negative-only, or --warning.", err=True)
+        raise typer.Exit(code=1)
     try:
         output = session_ops.search_session(
             query=query,
             task_type=task_type,
             status=status,
+            include_negative=include_negative,
+            negative_only=negative_only,
+            warning=warning,
+            failure_mode=failure_mode,
             min_confidence=min_confidence,
             limit=limit,
         )

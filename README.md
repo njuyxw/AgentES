@@ -77,6 +77,16 @@ agentes experience search \
   --query "import error generated client schema update" \
   --task-type code_debugging
 
+agentes experience search \
+  --query "generated client schema" \
+  --task-type code_debugging \
+  --include-negative
+
+agentes experience search \
+  --query "generated client" \
+  --negative-only \
+  --failure-mode stale_generated_artifact
+
 agentes experience open exp_generated_artifact --reuse
 agentes experience open exp_generated_artifact --evidence
 
@@ -115,11 +125,7 @@ SQLite owns metadata and FTS search. YAML, Markdown, and JSONL keep the stored o
 
 ## Codex Skill Integration
 
-This machine has an AgentES Codex skill installed at:
-
-```text
-/home/jinyx/.codex/skills/agentes
-```
+AgentES ships with a Codex skill in this repository under `skills/global_experience_retrieval.md`, and this development environment also uses a local Codex skill named `agentes`. To install a Codex skill for local use, place or symlink a skill directory under `${CODEX_HOME:-~/.codex}/skills/`.
 
 AgentES includes built-in session commands for Codex-style memory capture:
 

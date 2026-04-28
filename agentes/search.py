@@ -6,6 +6,7 @@ from typing import Optional
 
 
 CONFIDENCE_ORDER = {"low": 0, "medium": 1, "high": 2}
+NEGATIVE_STATUSES = ("failure", "partial", "warning")
 
 
 def confidence_allows(value: str, minimum: str) -> bool:
@@ -22,6 +23,10 @@ def search_experiences(
     query: str,
     task_type: Optional[str] = None,
     status: Optional[str] = None,
+    include_negative: bool = False,
+    negative_only: bool = False,
+    warning: bool = False,
+    failure_mode: Optional[str] = None,
     min_confidence: str = "low",
     limit: int = 10,
 ) -> list[sqlite3.Row]:
@@ -34,6 +39,21 @@ def search_experiences(
     if status:
         clauses.append("e.status = ?")
         params.append(status)
+    elif warning:
+        clauses.append("e.status = ?")
+        params.append("warning")
+    elif negative_only:
+        clauses.append(f"e.status IN ({','.join('?' for _ in NEGATIVE_STATUSES)})")
+        params.extend(NEGATIVE_STATUSES)
+    elif not include_negative:
+        clauses.append("e.status NOT IN (?, ?, ?)")
+        params.extend(NEGATIVE_STATUSES)
+    if failure_mode:
+        like = f"%{failure_mode}%"
+        clauses.append(
+            "(e.problem LIKE ? OR e.diagnosis LIKE ? OR e.applies_when LIKE ? OR e.avoid_when LIKE ?)"
+        )
+        params.extend([like, like, like, like])
 
     where = ""
     if clauses:

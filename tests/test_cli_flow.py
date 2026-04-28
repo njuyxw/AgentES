@@ -64,6 +64,96 @@ lifecycle:
 """
 
 
+NEGATIVE_EXPERIENCE_TEMPLATE = """
+schema_version: 1
+id: exp_negative_generated_artifact
+object_type: experience
+status: failure
+confidence: medium
+task:
+  type: code_debugging
+  domain: typescript
+  project: demo
+  repo: demo-repo
+  summary: "Do not regenerate client when generated files are uncommitted"
+problem:
+  symptoms:
+    - "Import error references generated client"
+  failure_modes:
+    - "stale_generated_artifact"
+diagnosis:
+  observations:
+    - "Generated files were intentionally not committed"
+  verified_facts:
+    - "Running the generator produced noisy unrelated diffs"
+  root_cause: "Generated artifact policy mismatch"
+actions:
+  summary: "Tried generator and reverted the noisy result"
+outcome:
+  result: failure
+reuse:
+  applies_when:
+    - "Generated client import fails"
+  avoid_when:
+    - "Generated files are intentionally not committed"
+  required_checks:
+    - "Check repository policy for generated files"
+  validation_after_reuse:
+    - "Confirm the actual package resolution path"
+evidence:
+  refs:
+    - __EVIDENCE_REF__
+lifecycle:
+  created_at: "2026-04-28T12:00:00Z"
+  updated_at: "2026-04-28T12:00:00Z"
+"""
+
+
+WARNING_EXPERIENCE_TEMPLATE = """
+schema_version: 1
+id: exp_warning_generated_artifact
+object_type: experience
+status: warning
+confidence: low
+task:
+  type: code_debugging
+  domain: typescript
+  project: demo
+  repo: demo-repo
+  summary: "Generated client fixes may hide package resolution problems"
+problem:
+  symptoms:
+    - "Generated client import fails"
+  failure_modes:
+    - "package_resolution"
+diagnosis:
+  observations:
+    - "Similar import errors came from package resolution"
+  verified_facts:
+    - "Search should surface warning experiences when requested"
+  root_cause: "Ambiguous generated client failure"
+actions:
+  summary: "Warned to inspect package resolution before generation"
+outcome:
+  result: warning
+reuse:
+  applies_when:
+    - "Generated client import fails"
+  avoid_when:
+    - "The generated path is confirmed missing"
+  required_checks:
+    - "Inspect package resolution"
+  validation_after_reuse:
+    - "Run module resolution check"
+evidence:
+  refs:
+    - __EVIDENCE_REF__
+lifecycle:
+  created_at: "2026-04-28T12:00:00Z"
+  updated_at: "2026-04-28T12:00:00Z"
+"""
+
+
 CONTEXT = """
 task_type: code_debugging
 domain: typescript
@@ -269,6 +359,105 @@ def test_reuse_record_rejects_invalid_result(tmp_path: Path, monkeypatch):
     )
 
     assert "Invalid result" in result.output
+
+
+def test_experience_search_negative_filters(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    invoke(["init"])
+    run = invoke(
+        [
+            "run",
+            "start",
+            "--task-type",
+            "code_debugging",
+            "--summary",
+            "Search negative generated artifact experiences",
+            "--project",
+            "demo",
+            "--repo",
+            "demo-repo",
+        ]
+    ).output.strip()
+    evidence = invoke(
+        [
+            "evidence",
+            "create",
+            run,
+            "--type",
+            "command_result",
+            "--claim",
+            "Negative search fixture evidence",
+            "--strength",
+            "medium",
+        ]
+    ).output.strip()
+
+    success_path = tmp_path / "success.yaml"
+    negative_path = tmp_path / "negative.yaml"
+    warning_path = tmp_path / "warning.yaml"
+    success_path.write_text(EXPERIENCE_TEMPLATE.replace("__EVIDENCE_REF__", evidence), encoding="utf-8")
+    negative_path.write_text(NEGATIVE_EXPERIENCE_TEMPLATE.replace("__EVIDENCE_REF__", evidence), encoding="utf-8")
+    warning_path.write_text(WARNING_EXPERIENCE_TEMPLATE.replace("__EVIDENCE_REF__", evidence), encoding="utf-8")
+    invoke(["experience", "import", str(success_path)])
+    invoke(["experience", "import", str(negative_path)])
+    invoke(["experience", "import", str(warning_path)])
+
+    default = invoke(
+        [
+            "experience",
+            "search",
+            "--query",
+            "generated client",
+            "--task-type",
+            "code_debugging",
+        ]
+    )
+    assert "exp_generated_artifact" in default.output
+    assert "exp_negative_generated_artifact" not in default.output
+    assert "exp_warning_generated_artifact" not in default.output
+
+    include_negative = invoke(
+        [
+            "experience",
+            "search",
+            "--query",
+            "generated client",
+            "--task-type",
+            "code_debugging",
+            "--include-negative",
+        ]
+    )
+    assert "exp_negative_generated_artifact" in include_negative.output
+    assert "exp_warning_generated_artifact" in include_negative.output
+
+    negative_only = invoke(
+        [
+            "experience",
+            "search",
+            "--query",
+            "generated client",
+            "--negative-only",
+            "--failure-mode",
+            "stale_generated_artifact",
+        ]
+    )
+    assert "exp_negative_generated_artifact" in negative_only.output
+    assert "exp_generated_artifact" not in negative_only.output
+    assert "exp_warning_generated_artifact" not in negative_only.output
+
+    warning = invoke(
+        [
+            "experience",
+            "search",
+            "--query",
+            "generated client",
+            "--warning",
+            "--failure-mode",
+            "package_resolution",
+        ]
+    )
+    assert "exp_warning_generated_artifact" in warning.output
+    assert "exp_negative_generated_artifact" not in warning.output
 
 
 def test_session_capture_flow(tmp_path: Path, monkeypatch):

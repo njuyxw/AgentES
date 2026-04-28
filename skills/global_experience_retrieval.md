@@ -19,6 +19,8 @@ AgentES stores evidence-backed experiences from prior agent runs.
 
 ```bash
 agentes experience search --query "<task symptoms>" --task-type "<type>"
+agentes experience search --query "<task symptoms>" --task-type "<type>" --include-negative
+agentes experience search --query "<failure mode>" --negative-only --failure-mode "<mode>"
 ```
 
 3. Open relevant experience:

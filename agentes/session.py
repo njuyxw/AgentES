@@ -304,6 +304,10 @@ def search_session(
     query: str,
     task_type: Optional[str] = None,
     status: Optional[str] = None,
+    include_negative: bool = False,
+    negative_only: bool = False,
+    warning: bool = False,
+    failure_mode: Optional[str] = None,
     min_confidence: str = "low",
     limit: int = 10,
 ) -> str:
@@ -314,6 +318,10 @@ def search_session(
             query=query,
             task_type=task_type,
             status=status,
+            include_negative=include_negative,
+            negative_only=negative_only,
+            warning=warning,
+            failure_mode=failure_mode,
             min_confidence=min_confidence,
             limit=limit,
         )
