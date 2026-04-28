@@ -9,12 +9,13 @@ CONFIDENCE_ORDER = {"low": 0, "medium": 1, "high": 2}
 NEGATIVE_STATUSES = ("failure", "partial", "warning")
 
 
-def confidence_allows(value: str, minimum: str) -> bool:
-    return CONFIDENCE_ORDER.get(value, 0) >= CONFIDENCE_ORDER.get(minimum, 0)
+def allowed_confidences(minimum: str) -> tuple[str, ...]:
+    cutoff = CONFIDENCE_ORDER.get(minimum, 0)
+    return tuple(name for name, rank in CONFIDENCE_ORDER.items() if rank >= cutoff)
 
 
 def fts_query(query: str) -> str:
-    tokens = re.findall(r"[\w\u4e00-\u9fff]+", query.lower())
+    tokens = [tok for tok in re.findall(r"[\w\u4e00-\u9fff]+", query.lower()) if len(tok) > 1]
     return " OR ".join(tokens)
 
 
@@ -55,6 +56,10 @@ def search_experiences(
         )
         params.extend([like, like, like, like])
 
+    confidences = allowed_confidences(min_confidence)
+    clauses.append(f"e.confidence IN ({','.join('?' for _ in confidences)})")
+    params.extend(confidences)
+
     where = ""
     if clauses:
         where = " AND " + " AND ".join(clauses)
@@ -70,7 +75,7 @@ def search_experiences(
             ORDER BY score, e.evidence_count DESC, e.updated_at DESC
             LIMIT ?
             """,
-            [match, *params, limit * 3],
+            [match, *params, limit],
         ).fetchall()
     else:
         base_where = "WHERE " + " AND ".join(clauses) if clauses else ""
@@ -82,8 +87,7 @@ def search_experiences(
             ORDER BY e.evidence_count DESC, e.updated_at DESC
             LIMIT ?
             """,
-            [*params, limit * 3],
+            [*params, limit],
         ).fetchall()
 
-    filtered = [row for row in rows if confidence_allows(row["confidence"], min_confidence)]
-    return filtered[:limit]
+    return list(rows)

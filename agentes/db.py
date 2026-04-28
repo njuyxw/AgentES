@@ -143,9 +143,15 @@ def upsert_experience(conn: sqlite3.Connection, manifest: dict[str, Any], manife
     diagnosis = manifest.get("diagnosis") or {}
     evidence_refs = [str(item) for item in ((manifest.get("evidence") or {}).get("refs") or [])]
     resolved_evidence_refs: list[str] = []
+    missing: list[str] = []
     for evidence_id in evidence_refs:
-        if evidence_exists(conn, evidence_id) and evidence_id not in resolved_evidence_refs:
+        if not evidence_exists(conn, evidence_id):
+            missing.append(evidence_id)
+            continue
+        if evidence_id not in resolved_evidence_refs:
             resolved_evidence_refs.append(evidence_id)
+    if missing:
+        raise ValueError(f"Missing evidence refs: {', '.join(missing)}")
 
     title = str(task.get("summary") or manifest.get("id"))
     summary = str(task.get("summary") or "")

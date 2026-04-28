@@ -100,6 +100,14 @@ class EvidenceManifest(FlexibleModel):
     data: EvidenceData = Field(default_factory=EvidenceData)
     created_at: str
 
+    @field_validator("strength")
+    @classmethod
+    def strength_must_be_known(cls, value: str) -> str:
+        known = {"weak", "medium", "strong"}
+        if value not in known:
+            raise ValueError(f"strength must be one of {sorted(known)}")
+        return value
+
 
 class ExperienceManifest(FlexibleModel):
     schema_version: int = 1

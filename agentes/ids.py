@@ -30,13 +30,15 @@ def next_id(conn: sqlite3.Connection, prefix: str) -> str:
     table = PREFIX_TABLE[prefix]
     date_part = id_date()
     stem = f"{prefix}_{date_part}_"
-    row = conn.execute(
-        f"SELECT id FROM {table} WHERE id LIKE ? ORDER BY id DESC LIMIT 1",
+    rows = conn.execute(
+        f"SELECT id FROM {table} WHERE id LIKE ?",
         (f"{stem}%",),
-    ).fetchone()
+    ).fetchall()
     next_number = 1
-    if row:
+    for row in rows:
         suffix = str(row["id"]).rsplit("_", 1)[-1]
         if suffix.isdigit():
-            next_number = int(suffix) + 1
+            candidate = int(suffix) + 1
+            if candidate > next_number:
+                next_number = candidate
     return f"{stem}{next_number:03d}"

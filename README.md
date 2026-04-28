@@ -124,9 +124,47 @@ agentes reuse record \
 
 SQLite owns metadata and FTS search. YAML, Markdown, and JSONL keep the stored objects readable.
 
-## Codex Skill Integration
+## Editor / Agent Integrations
 
-AgentES ships with a Codex skill in this repository under `skills/global_experience_retrieval.md`, and this development environment also uses a local Codex skill named `agentes`. To install a Codex skill for local use, place or symlink a skill directory under `${CODEX_HOME:-~/.codex}/skills/`.
+AgentES ships skill descriptors for both Codex and Claude Code under `skills/`.
+The `agentes skill install` command writes the appropriate `SKILL.md` into the
+target's standard skills directory.
+
+### Claude Code
+
+Install the skill for a single user:
+
+```bash
+agentes skill install --target claude-code
+# → ~/.claude/skills/agentes/SKILL.md
+```
+
+Override the install location with `--dir`, or set `CLAUDE_HOME`:
+
+```bash
+CLAUDE_HOME=/opt/claude agentes skill install --target claude-code
+agentes skill install --target claude-code --dir /tmp/skills/agentes
+```
+
+Pass `--force` to overwrite an existing SKILL.md.
+
+The shipped skill includes a Claude-Code-friendly `description` so Claude Code
+auto-invokes it on phrases such as "have we seen this before", "lesson learned",
+"failure mode", or any request to record/look up a past solution. The skill
+body documents the `agentes session` flow Claude Code should run.
+
+### Codex
+
+```bash
+agentes skill install --target codex
+# → ~/.codex/skills/agentes/SKILL.md
+```
+
+The repository also keeps a project-local Codex skill at
+`skills/global_experience_retrieval.md`; `agentes init` writes a copy of this
+into `.agentes/objects/skills/` for project-scoped usage. Existing user edits
+are preserved on subsequent `agentes init` calls; pass `--force` to reinstall
+the bundled version.
 
 AgentES includes built-in session commands for Codex-style memory capture:
 

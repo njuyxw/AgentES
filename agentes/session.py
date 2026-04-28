@@ -379,7 +379,6 @@ def create_evidence(
             created_at=iso_now(),
         )
         manifest_path = store.evidence / f"{evidence_id}.yaml"
-        write_yaml(manifest_path, model_to_dict(manifest))
         conn.execute(
             """
             INSERT INTO evidence (id, run_id, type, claim, strength, path, created_at)
@@ -387,6 +386,7 @@ def create_evidence(
             """,
             (evidence_id, run_id, type_, claim, strength, store.rel(manifest_path), manifest.created_at),
         )
+        write_yaml(manifest_path, model_to_dict(manifest))
     state = read_state(store)
     state.setdefault("evidence", []).append(evidence_id)
     write_state(store, state)
@@ -417,11 +417,11 @@ def import_experience_data(store: Store, raw: dict[str, Any]) -> str:
         evidence_block["refs"] = normalized_refs
         exp_dir = safe_child(store.experiences, data["id"], "experience id")
         manifest_path = exp_dir / "manifest.yaml"
+        db.upsert_experience(conn, data, store.rel(manifest_path))
         write_yaml(manifest_path, data)
         write_text(exp_dir / "summary.md", summary_markdown(data))
         write_text(exp_dir / "reuse.md", reuse_markdown(data))
         write_text(exp_dir / "diagnosis.md", diagnosis_markdown(data))
-        db.upsert_experience(conn, data, store.rel(manifest_path))
     return data["id"]
 
 
@@ -435,8 +435,16 @@ def start_session(
     task_type: str,
     project: Optional[str] = None,
     repo: Optional[str] = None,
+    force: bool = False,
 ) -> tuple[Store, str]:
     store = ensure_session_store()
+    state = read_state(store)
+    active_run = state.get("run_id") if state and not state.get("finished_at") else None
+    if active_run and not force:
+        raise ValueError(
+            f"AgentES session run {active_run} is still active. "
+            "Finish it with `agentes session finish` or pass --force."
+        )
     project_name = project or store.project_root.name
     repo_name = repo or git_remote(store.project_root) or store.project_root.name
     run_id = create_run(store, task_type, summary, project_name, repo_name)

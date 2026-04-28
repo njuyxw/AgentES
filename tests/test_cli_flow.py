@@ -281,7 +281,7 @@ def test_full_experience_reuse_flow(tmp_path: Path, monkeypatch):
     assert "Applies When" in reuse.output
 
     evidence_view = invoke(["experience", "open", "exp_generated_artifact", "--evidence"])
-    assert "ev_20260428_001" in evidence_view.output
+    assert evidence in evidence_view.output
 
     validation = invoke(
         [
@@ -366,6 +366,172 @@ def test_reuse_record_rejects_invalid_result(tmp_path: Path, monkeypatch):
     )
 
     assert "Invalid result" in result.output
+
+
+def test_run_finish_rejects_invalid_status(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    invoke(["init"])
+    run = invoke(
+        [
+            "run",
+            "start",
+            "--task-type",
+            "code_debugging",
+            "--summary",
+            "Bad status fixture",
+        ]
+    ).output.strip()
+    result = invoke_fail(["run", "finish", run, "--status", "done"])
+    assert "Invalid status" in result.output
+
+
+def test_evidence_create_rejects_invalid_strength(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    invoke(["init"])
+    run = invoke(
+        [
+            "run",
+            "start",
+            "--task-type",
+            "code_debugging",
+            "--summary",
+            "Strength fixture",
+        ]
+    ).output.strip()
+    result = invoke_fail(
+        [
+            "evidence",
+            "create",
+            run,
+            "--type",
+            "command_result",
+            "--claim",
+            "Tests passed",
+            "--strength",
+            "very-strong",
+        ]
+    )
+    assert "strength" in result.output.lower()
+
+
+def test_init_preserves_user_skill_edits(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    invoke(["init"])
+    skill_path = tmp_path / ".agentes" / "objects" / "skills" / "global_experience_retrieval.md"
+    skill_path.write_text("# My customized skill\n", encoding="utf-8")
+    invoke(["init"])
+    assert skill_path.read_text(encoding="utf-8") == "# My customized skill\n"
+    invoke(["init", "--force"])
+    assert "Skill: Using AgentES" in skill_path.read_text(encoding="utf-8")
+
+
+def test_skill_install_claude_code(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    invoke(["init"])
+    target_dir = tmp_path / "claude_skills" / "agentes"
+    output = invoke(
+        [
+            "skill",
+            "install",
+            "--target",
+            "claude-code",
+            "--dir",
+            str(target_dir),
+        ]
+    ).output.strip()
+    skill_path = target_dir / "SKILL.md"
+    assert output == str(skill_path)
+    body = skill_path.read_text(encoding="utf-8")
+    assert body.startswith("---\nname: agentes\n")
+    assert "description:" in body.splitlines()[2]
+    assert "agentes session capture" in body
+
+    refuse = invoke_fail(
+        [
+            "skill",
+            "install",
+            "--target",
+            "claude-code",
+            "--dir",
+            str(target_dir),
+        ]
+    )
+    assert "already exists" in refuse.output
+
+    invoke(
+        [
+            "skill",
+            "install",
+            "--target",
+            "claude-code",
+            "--dir",
+            str(target_dir),
+            "--force",
+        ]
+    )
+
+
+def test_skill_install_codex_has_no_frontmatter(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    invoke(["init"])
+    target_dir = tmp_path / "codex_skills" / "agentes"
+    invoke(
+        [
+            "skill",
+            "install",
+            "--target",
+            "codex",
+            "--dir",
+            str(target_dir),
+        ]
+    )
+    body = (target_dir / "SKILL.md").read_text(encoding="utf-8")
+    assert not body.startswith("---")
+    assert "AgentES Experience Store" in body
+
+
+def test_skill_install_rejects_unknown_target(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    invoke(["init"])
+    result = invoke_fail(["skill", "install", "--target", "vscode"])
+    assert "Unknown target" in result.output
+
+
+def test_shipped_skill_files_match_constants(tmp_path: Path):
+    from agentes.skill import SKILL_TARGETS
+
+    repo_root = Path(__file__).resolve().parents[1]
+    for key, target in SKILL_TARGETS.items():
+        shipped = repo_root / "skills" / key.replace("-", "_") / target.name / "SKILL.md"
+        assert shipped.exists(), f"missing shipped skill: {shipped}"
+        assert shipped.read_text(encoding="utf-8") == target.render(), (
+            f"shipped skill drift: {shipped}"
+        )
+
+
+def test_session_start_refuses_when_run_active(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    invoke(
+        [
+            "session",
+            "start",
+            "--summary",
+            "First session",
+            "--task-type",
+            "code_editing",
+        ]
+    )
+    result = invoke_fail(
+        [
+            "session",
+            "start",
+            "--summary",
+            "Second session",
+            "--task-type",
+            "code_editing",
+        ]
+    )
+    assert "still active" in result.output
 
 
 def test_experience_search_negative_filters(tmp_path: Path, monkeypatch):

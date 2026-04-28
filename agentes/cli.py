@@ -14,7 +14,6 @@ from .models import (
     CurrentContext,
     EvidenceManifest,
     EvidenceSource,
-    ExperienceManifest,
     RunContext,
     RunManifest,
     RunTask,
@@ -22,16 +21,18 @@ from .models import (
     TraceRef,
 )
 from .render import (
-    diagnosis_markdown,
     evidence_view,
-    reuse_markdown,
     search_cards,
-    summary_markdown,
     validation_report,
 )
 from .search import search_experiences
 from . import session as session_ops
-from .skill import DEFAULT_SKILL_NAME, install_default_skill
+from .skill import (
+    DEFAULT_SKILL_NAME,
+    SKILL_TARGETS,
+    install_default_skill,
+    install_external_skill,
+)
 from .storage import (
     StoreNotFound,
     append_jsonl,
@@ -43,7 +44,6 @@ from .storage import (
     read_jsonl,
     read_text,
     read_yaml,
-    safe_child,
     store_for_init,
     validate_object_id,
     write_text,
@@ -60,10 +60,6 @@ experience_app = typer.Typer(no_args_is_help=True, help="Import, search, open, a
 reuse_app = typer.Typer(no_args_is_help=True, help="Record experience reuse outcomes.")
 skill_app = typer.Typer(no_args_is_help=True, help="Open installed AgentES skills.")
 session_app = typer.Typer(no_args_is_help=True, help="Manage Codex-style AgentES sessions.")
-
-
-def fail(message: str) -> None:
-    raise typer.Exit(code=1) from typer.BadParameter(message)
 
 
 def get_store_or_exit():
@@ -95,15 +91,13 @@ def init(
 ) -> None:
     """Create a project-local .agentes store."""
     store = store_for_init()
-    if store.root.exists() and not force:
-        ensure_dirs(store)
-        db.init_db(store)
-        install_default_skill(store)
-        typer.echo(f"AgentES store already exists: {store.rel(store.root)}")
-        return
+    already_exists = store.root.exists()
     ensure_dirs(store)
     db.init_db(store)
-    install_default_skill(store)
+    install_default_skill(store, force=force)
+    if already_exists and not force:
+        typer.echo(f"AgentES store already exists: {store.rel(store.root)}")
+        return
     typer.echo(f"Initialized AgentES store: {store.rel(store.root)}")
 
 
@@ -154,12 +148,21 @@ def run_start(
     typer.echo(run_id)
 
 
+RUN_STATUS_CHOICES = {"success", "failure", "partial"}
+
+
 @run_app.command("finish")
 def run_finish(
     run_id: str,
     status: str = typer.Option(..., "--status"),
 ) -> None:
     """Finish a run."""
+    if status not in RUN_STATUS_CHOICES:
+        typer.echo(
+            f"Invalid status. Use one of: {', '.join(sorted(RUN_STATUS_CHOICES))}.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
     store = get_store_or_exit()
     now = iso_now()
     with db.connect(store) as conn:
@@ -231,38 +234,42 @@ def evidence_create(
 ) -> None:
     """Create evidence for a run and print its evidence id."""
     store = get_store_or_exit()
-    with db.connect(store) as conn:
-        try:
-            db.run_row(conn, run_id)
-        except KeyError as exc:
-            typer.echo(str(exc), err=True)
-            raise typer.Exit(code=1)
-        evidence_id = next_id(conn, "ev")
-        stdout_path = copy_blob(store, stdout, "stdout", evidence_id, ".out")
-        stderr_path = copy_blob(store, stderr, "stderr", evidence_id, ".err")
-        manifest = EvidenceManifest(
-            id=evidence_id,
-            type=type_,
-            claim=claim,
-            strength=strength,
-            source=EvidenceSource(run=run_id, trace_step=trace_step),
-            data={
-                "command": command,
-                "exit_code": exit_code,
-                "stdout_path": stdout_path,
-                "stderr_path": stderr_path,
-            },
-            created_at=iso_now(),
-        )
-        manifest_path = store.evidence / f"{evidence_id}.yaml"
-        write_yaml(manifest_path, model_to_dict(manifest))
-        conn.execute(
-            """
-            INSERT INTO evidence (id, run_id, type, claim, strength, path, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (evidence_id, run_id, type_, claim, strength, store.rel(manifest_path), manifest.created_at),
-        )
+    try:
+        with db.connect(store) as conn:
+            try:
+                db.run_row(conn, run_id)
+            except KeyError as exc:
+                typer.echo(str(exc), err=True)
+                raise typer.Exit(code=1)
+            evidence_id = next_id(conn, "ev")
+            stdout_path = copy_blob(store, stdout, "stdout", evidence_id, ".out")
+            stderr_path = copy_blob(store, stderr, "stderr", evidence_id, ".err")
+            manifest = EvidenceManifest(
+                id=evidence_id,
+                type=type_,
+                claim=claim,
+                strength=strength,
+                source=EvidenceSource(run=run_id, trace_step=trace_step),
+                data={
+                    "command": command,
+                    "exit_code": exit_code,
+                    "stdout_path": stdout_path,
+                    "stderr_path": stderr_path,
+                },
+                created_at=iso_now(),
+            )
+            manifest_path = store.evidence / f"{evidence_id}.yaml"
+            conn.execute(
+                """
+                INSERT INTO evidence (id, run_id, type, claim, strength, path, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (evidence_id, run_id, type_, claim, strength, store.rel(manifest_path), manifest.created_at),
+            )
+            write_yaml(manifest_path, model_to_dict(manifest))
+    except ValidationError as exc:
+        typer.echo(f"Invalid evidence: {exc}", err=True)
+        raise typer.Exit(code=1)
     typer.echo(evidence_id)
 
 
@@ -272,38 +279,11 @@ def experience_import(path: Path) -> None:
     store = get_store_or_exit()
     try:
         raw = read_yaml(path)
-        with db.connect(store) as conn:
-            if not raw.get("id"):
-                raw["id"] = next_id(conn, "exp")
-            now = iso_now()
-            raw.setdefault("lifecycle", {})
-            raw["lifecycle"].setdefault("created_at", now)
-            raw["lifecycle"]["updated_at"] = now
-            manifest = ExperienceManifest(**raw)
-            data = model_to_dict(manifest)
-            validate_object_id(data["id"], "experience id")
-            evidence_block = data.setdefault("evidence", {})
-            refs = as_list(evidence_block.get("refs"))
-            normalized_refs: list[str] = []
-            for ref in refs:
-                validate_object_id(ref, "evidence ref")
-                if ref not in normalized_refs:
-                    normalized_refs.append(ref)
-            missing_refs = [ref for ref in normalized_refs if not db.evidence_exists(conn, ref)]
-            if missing_refs:
-                raise ValueError(f"Missing evidence refs: {', '.join(missing_refs)}")
-            evidence_block["refs"] = normalized_refs
-            exp_dir = safe_child(store.experiences, data["id"], "experience id")
-            manifest_path = exp_dir / "manifest.yaml"
-            write_yaml(manifest_path, data)
-            write_text(exp_dir / "summary.md", summary_markdown(data))
-            write_text(exp_dir / "reuse.md", reuse_markdown(data))
-            write_text(exp_dir / "diagnosis.md", diagnosis_markdown(data))
-            db.upsert_experience(conn, data, store.rel(manifest_path))
+        data = session_ops.import_experience_data(store, raw)
     except (ValidationError, ValueError, OSError) as exc:
         typer.echo(f"Import failed: {exc}", err=True)
         raise typer.Exit(code=1)
-    typer.echo(data["id"])
+    typer.echo(data)
 
 
 @experience_app.command("search")
@@ -366,6 +346,11 @@ def experience_open(
         refs = as_list((manifest.get("evidence") or {}).get("refs"))
         manifests = {}
         for ref in refs:
+            try:
+                validate_object_id(ref, "evidence ref")
+            except ValueError as exc:
+                typer.echo(str(exc), err=True)
+                raise typer.Exit(code=1)
             path = store.evidence / f"{ref}.yaml"
             if path.exists():
                 manifests[ref] = read_yaml(path)
@@ -470,6 +455,38 @@ def skill_open(name: str = DEFAULT_SKILL_NAME) -> None:
     typer.echo(read_text(path), nl=False)
 
 
+@skill_app.command("install")
+def skill_install(
+    target: str = typer.Option(
+        "claude-code",
+        "--target",
+        help=f"Skill target. Choices: {', '.join(sorted(SKILL_TARGETS))}.",
+    ),
+    dir_: Optional[Path] = typer.Option(
+        None,
+        "--dir",
+        help="Override the skills directory. Defaults to the target's standard location.",
+    ),
+    force: bool = typer.Option(False, "--force", help="Overwrite an existing SKILL.md."),
+) -> None:
+    """Install the AgentES skill into a Claude Code or Codex skills directory."""
+    if target not in SKILL_TARGETS:
+        typer.echo(
+            f"Unknown target {target!r}. Choose one of: {', '.join(sorted(SKILL_TARGETS))}.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    try:
+        skill_path = install_external_skill(target, dir_override=dir_, force=force)
+    except FileExistsError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1)
+    except (ValueError, OSError) as exc:
+        typer.echo(f"Skill install failed: {exc}", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(str(skill_path))
+
+
 def handle_session_error(exc: Exception) -> None:
     typer.echo(str(exc), err=True)
     raise typer.Exit(code=1)
@@ -493,10 +510,13 @@ def session_start(
     task_type: str = typer.Option("coding_session", "--task-type"),
     project: Optional[str] = typer.Option(None, "--project"),
     repo: Optional[str] = typer.Option(None, "--repo"),
+    force: bool = typer.Option(False, "--force", help="Replace an active run instead of refusing."),
 ) -> None:
     """Start a project-local AgentES session run."""
     try:
-        _, run_id = session_ops.start_session(summary, task_type, project=project, repo=repo)
+        _, run_id = session_ops.start_session(
+            summary, task_type, project=project, repo=repo, force=force
+        )
     except Exception as exc:
         handle_session_error(exc)
     typer.echo(run_id)
