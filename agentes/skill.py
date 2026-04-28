@@ -19,6 +19,7 @@ AgentES stores evidence-backed experiences from prior agent runs.
 5. Convert experience into a checklist; do not copy old commands blindly.
 6. After use, record the outcome with `agentes reuse record`.
 7. If a new reusable lesson was learned, create an experience YAML and import it.
+8. For Codex-style sessions, save visible transcript messages and structured reasoning summaries, not hidden chain-of-thought.
 
 ## Standard Flow
 
@@ -57,6 +58,26 @@ agentes experience adapt <id> --context current_context.yaml
 ```bash
 agentes reuse record --experience <id> --run <run_id> --result success|failure|partial
 ```
+
+## Session Memory Flow
+
+For substantial Codex sessions, use the built-in session commands:
+
+```bash
+agentes session start --summary "<task>" --task-type "<type>"
+agentes session message --role user --content "<visible user message>"
+agentes session message --role assistant --content-file /tmp/assistant-message.md
+agentes session trace --summary "<tool result>" --type tool_result --command "<command>" --exit-code 0
+agentes session observe --content "<visible observation>"
+agentes session reason \\
+  --observation "<what was observed>" \\
+  --hypothesis "<explicit hypothesis>" \\
+  --decision "<decision made>" \\
+  --rejected-alternative "<alternative :: reason>"
+agentes session capture --title "<lesson>" ...
+```
+
+Transcript messages are stored under `.agentes/objects/transcripts/<run_id>.jsonl`; trace, observation, and reasoning summary events remain in `.agentes/objects/traces/`.
 """
 
 

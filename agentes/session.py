@@ -16,6 +16,7 @@ from .models import (
     RunContext,
     RunManifest,
     RunTask,
+    TranscriptEvent,
     TraceEvent,
     TraceRef,
 )
@@ -26,6 +27,7 @@ from .storage import (
     Store,
     append_jsonl,
     as_list,
+    copy_blob,
     ensure_dirs,
     model_to_dict,
     read_jsonl,
@@ -129,18 +131,21 @@ def create_run(
         trace_id = next_id(conn, "trace")
         run_dir = store.runs / run_id
         trace_path = store.traces / f"{trace_id}.jsonl"
+        transcript_path = store.transcripts / f"{run_id}.jsonl"
         input_path = run_dir / "input.md"
         output_path = run_dir / "output.md"
         manifest_path = run_dir / "manifest.yaml"
         write_text(input_path, summary + "\n")
         write_text(output_path, "")
         write_text(trace_path, "")
+        write_text(transcript_path, "")
         manifest = RunManifest(
             id=run_id,
             task=RunTask(type=task_type, summary=summary, input_path=store.rel(input_path)),
             context=RunContext(project=project, repo=repo),
             status="running",
             trace=TraceRef(id=trace_id, path=store.rel(trace_path)),
+            transcript=TraceRef(id=run_id, path=store.rel(transcript_path)),
             created_at=now,
         )
         write_yaml(manifest_path, model_to_dict(manifest))
@@ -181,11 +186,17 @@ def add_trace(
     summary: str,
     command: Optional[str] = None,
     exit_code: Optional[int] = None,
+    stdout: Optional[Path] = None,
+    stderr: Optional[Path] = None,
+    extra: Optional[dict[str, Any]] = None,
 ) -> int:
     with db.connect(store) as conn:
         trace = db.trace_for_run(conn, run_id)
         trace_path = store.project_root / trace["path"]
         step = len(read_jsonl(trace_path)) + 1
+        event_id = f"{run_id}_step_{step}"
+        stdout_path = copy_blob(store, stdout, "stdout", event_id, ".out")
+        stderr_path = copy_blob(store, stderr, "stderr", event_id, ".err")
         event = TraceEvent(
             step=step,
             type=type_,
@@ -193,9 +204,153 @@ def add_trace(
             timestamp=iso_now(),
             command=command,
             exit_code=exit_code,
+            stdout_path=stdout_path,
+            stderr_path=stderr_path,
+            **(extra or {}),
         )
         append_jsonl(trace_path, model_to_dict(event))
     return step
+
+
+def transcript_path(store: Store, run_id: str) -> Path:
+    validate_object_id(run_id, "run id")
+    return store.transcripts / f"{run_id}.jsonl"
+
+
+def add_transcript_event(
+    store: Store,
+    run_id: str,
+    type_: str,
+    role: Optional[str] = None,
+    content: Optional[str] = None,
+    **extra: Any,
+) -> int:
+    with db.connect(store) as conn:
+        db.run_row(conn, run_id)
+    path = transcript_path(store, run_id)
+    seq = len(read_jsonl(path)) + 1
+    event = TranscriptEvent(
+        seq=seq,
+        type=type_,
+        role=role,
+        content=content,
+        timestamp=iso_now(),
+        **extra,
+    )
+    append_jsonl(path, model_to_dict(event))
+    return seq
+
+
+def add_message(store: Store, run_id: str, role: str, content: str) -> tuple[int, int]:
+    if role not in {"user", "assistant", "system"}:
+        raise ValueError("Invalid role. Use one of: user, assistant, system.")
+    seq = add_transcript_event(store, run_id, "message", role=role, content=content)
+    step = add_trace(
+        store,
+        run_id,
+        "message",
+        content,
+        extra={
+            "role": role,
+            "content": content,
+            "visibility": "visible",
+            "transcript_seq": seq,
+        },
+    )
+    return seq, step
+
+
+def add_observation(store: Store, run_id: str, content: str) -> int:
+    return add_trace(
+        store,
+        run_id,
+        "observation",
+        content,
+        extra={
+            "content": content,
+            "visibility": "visible",
+            "sensitivity": "normal",
+        },
+    )
+
+
+def parse_rejected_alternatives(values: Optional[List[str]]) -> list[dict[str, str]]:
+    rejected: list[dict[str, str]] = []
+    for value in values or []:
+        item = value.strip()
+        if not item:
+            continue
+        if "::" in item:
+            alternative, reason = item.split("::", 1)
+            rejected.append({"alternative": alternative.strip(), "reason": reason.strip()})
+        else:
+            rejected.append({"alternative": item})
+    return rejected
+
+
+def reasoning_summary_text(
+    summary: Optional[str],
+    observations: List[str],
+    hypotheses: List[str],
+    decisions: List[str],
+    diagnosis: Optional[str],
+) -> str:
+    if summary:
+        return summary
+    parts: list[str] = []
+    if observations:
+        parts.append(f"Observation: {observations[0]}")
+    if hypotheses:
+        parts.append(f"Hypothesis: {hypotheses[0]}")
+    if decisions:
+        parts.append(f"Decision: {decisions[0]}")
+    if diagnosis:
+        parts.append(f"Diagnosis: {diagnosis}")
+    return " ".join(parts) or "Reasoning summary"
+
+
+def add_reasoning_summary(
+    store: Store,
+    run_id: str,
+    summary: Optional[str] = None,
+    observations: Optional[List[str]] = None,
+    hypotheses: Optional[List[str]] = None,
+    decisions: Optional[List[str]] = None,
+    rejected_alternatives: Optional[List[str]] = None,
+    diagnosis: Optional[str] = None,
+    linked_evidence: Optional[List[str]] = None,
+) -> int:
+    observations = [item.strip() for item in observations or [] if item.strip()]
+    hypotheses = [item.strip() for item in hypotheses or [] if item.strip()]
+    decisions = [item.strip() for item in decisions or [] if item.strip()]
+    rejected = parse_rejected_alternatives(rejected_alternatives)
+    linked = [item.strip() for item in linked_evidence or [] if item.strip()]
+    if not any([summary, observations, hypotheses, decisions, rejected, diagnosis]):
+        raise ValueError("At least one reasoning field is required.")
+    with db.connect(store) as conn:
+        db.run_row(conn, run_id)
+        for evidence_id in linked:
+            validate_object_id(evidence_id, "evidence id")
+        missing = [evidence_id for evidence_id in linked if not db.evidence_exists(conn, evidence_id)]
+    if missing:
+        raise ValueError(f"Missing evidence refs: {', '.join(missing)}")
+    return add_trace(
+        store,
+        run_id,
+        "reasoning_summary",
+        reasoning_summary_text(summary, observations, hypotheses, decisions, diagnosis),
+        extra={
+            "visibility": "visible",
+            "sensitivity": "summary",
+            "content": summary,
+            "observations": observations,
+            "hypotheses": hypotheses,
+            "decisions": decisions,
+            "rejected_alternatives": rejected,
+            "diagnosis": diagnosis,
+            "linked_evidence": linked,
+        },
+    )
 
 
 def create_evidence(

@@ -122,18 +122,21 @@ def run_start(
         trace_id = next_id(conn, "trace")
         run_dir = store.runs / run_id
         trace_path = store.traces / f"{trace_id}.jsonl"
+        transcript_path = store.transcripts / f"{run_id}.jsonl"
         input_path = run_dir / "input.md"
         output_path = run_dir / "output.md"
         manifest_path = run_dir / "manifest.yaml"
         write_text(input_path, summary + "\n")
         write_text(output_path, "")
         write_text(trace_path, "")
+        write_text(transcript_path, "")
         manifest = RunManifest(
             id=run_id,
             task=RunTask(type=task_type, summary=summary, input_path=store.rel(input_path)),
             context=RunContext(project=project, repo=repo),
             status="running",
             trace=TraceRef(id=trace_id, path=store.rel(trace_path)),
+            transcript=TraceRef(id=run_id, path=store.rel(transcript_path)),
             created_at=now,
         )
         write_yaml(manifest_path, model_to_dict(manifest))
@@ -472,6 +475,18 @@ def handle_session_error(exc: Exception) -> None:
     raise typer.Exit(code=1)
 
 
+def resolve_content(content: Optional[str], content_file: Optional[Path], label: str) -> str:
+    if content and content_file:
+        typer.echo(f"Use only one of --{label} or --{label}-file.", err=True)
+        raise typer.Exit(code=1)
+    if content_file:
+        return read_text(content_file)
+    if content:
+        return content
+    typer.echo(f"Either --{label} or --{label}-file is required.", err=True)
+    raise typer.Exit(code=1)
+
+
 @session_app.command("start")
 def session_start(
     summary: str = typer.Option(..., "--summary"),
@@ -526,6 +541,8 @@ def session_trace(
     type_: str = typer.Option("note", "--type"),
     command: Optional[str] = typer.Option(None, "--command"),
     exit_code: Optional[int] = typer.Option(None, "--exit-code"),
+    stdout: Optional[Path] = typer.Option(None, "--stdout", exists=True, dir_okay=False),
+    stderr: Optional[Path] = typer.Option(None, "--stderr", exists=True, dir_okay=False),
     run: Optional[str] = typer.Option(None, "--run"),
 ) -> None:
     """Add a trace event to the active session run."""
@@ -539,6 +556,79 @@ def session_trace(
             summary=summary,
             command=command,
             exit_code=exit_code,
+            stdout=stdout,
+            stderr=stderr,
+        )
+    except Exception as exc:
+        handle_session_error(exc)
+    typer.echo(f"trace_step={step}")
+
+
+@session_app.command("message")
+def session_message(
+    role: str = typer.Option(..., "--role", help="Visible message role: user, assistant, or system."),
+    content: Optional[str] = typer.Option(None, "--content", help="Visible message content to store in the session transcript."),
+    content_file: Optional[Path] = typer.Option(None, "--content-file", exists=True, dir_okay=False),
+    run: Optional[str] = typer.Option(None, "--run"),
+) -> None:
+    """Append a visible message to the session transcript and trace."""
+    resolved_content = resolve_content(content, content_file, "content")
+    try:
+        store = session_ops.ensure_session_store()
+        run_id = session_ops.current_run(store, run)
+        seq, step = session_ops.add_message(store, run_id, role=role, content=resolved_content)
+    except Exception as exc:
+        handle_session_error(exc)
+    typer.echo(f"transcript_seq={seq}")
+    typer.echo(f"trace_step={step}")
+
+
+@session_app.command("observe")
+def session_observe(
+    content: Optional[str] = typer.Option(None, "--content", help="Visible observation to store as a trace event."),
+    content_file: Optional[Path] = typer.Option(None, "--content-file", exists=True, dir_okay=False),
+    run: Optional[str] = typer.Option(None, "--run"),
+) -> None:
+    """Append a structured observation to the active session trace."""
+    resolved_content = resolve_content(content, content_file, "content")
+    try:
+        store = session_ops.ensure_session_store()
+        run_id = session_ops.current_run(store, run)
+        step = session_ops.add_observation(store, run_id, resolved_content)
+    except Exception as exc:
+        handle_session_error(exc)
+    typer.echo(f"trace_step={step}")
+
+
+@session_app.command("reason")
+def session_reason(
+    summary: Optional[str] = typer.Option(None, "--summary", help="Optional compact reasoning summary."),
+    observation: Optional[List[str]] = typer.Option(None, "--observation", help="Repeatable visible observation."),
+    hypothesis: Optional[List[str]] = typer.Option(None, "--hypothesis", help="Repeatable explicit hypothesis."),
+    decision: Optional[List[str]] = typer.Option(None, "--decision", help="Repeatable decision made from visible context."),
+    rejected_alternative: Optional[List[str]] = typer.Option(
+        None,
+        "--rejected-alternative",
+        help="Repeatable rejected alternative. Use 'alternative :: reason' for structured storage.",
+    ),
+    diagnosis: Optional[str] = typer.Option(None, "--diagnosis"),
+    linked_evidence: Optional[List[str]] = typer.Option(None, "--linked-evidence", help="Repeatable evidence id."),
+    run: Optional[str] = typer.Option(None, "--run"),
+) -> None:
+    """Append a structured reasoning summary without storing hidden chain-of-thought."""
+    try:
+        store = session_ops.ensure_session_store()
+        run_id = session_ops.current_run(store, run)
+        step = session_ops.add_reasoning_summary(
+            store,
+            run_id,
+            summary=summary,
+            observations=observation,
+            hypotheses=hypothesis,
+            decisions=decision,
+            rejected_alternatives=rejected_alternative,
+            diagnosis=diagnosis,
+            linked_evidence=linked_evidence,
         )
     except Exception as exc:
         handle_session_error(exc)

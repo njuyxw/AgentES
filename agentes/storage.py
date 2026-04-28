@@ -39,6 +39,10 @@ class Store:
         return self.objects / "traces"
 
     @property
+    def transcripts(self) -> Path:
+        return self.objects / "transcripts"
+
+    @property
     def evidence(self) -> Path:
         return self.objects / "evidence"
 
@@ -75,6 +79,7 @@ def ensure_dirs(store: Store) -> None:
         store.root,
         store.runs,
         store.traces,
+        store.transcripts,
         store.evidence,
         store.experiences,
         store.blobs / "stdout",

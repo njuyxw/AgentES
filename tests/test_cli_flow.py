@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -183,12 +184,18 @@ def invoke_fail(args: list[str]):
     return result
 
 
+def read_jsonl(path: Path) -> list[dict]:
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
 def test_init_creates_store(tmp_path: Path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     invoke(["init"])
 
     assert (tmp_path / ".agentes" / "agentes.db").exists()
-    assert (tmp_path / ".agentes" / "objects" / "skills" / "global_experience_retrieval.md").exists()
+    skill_path = tmp_path / ".agentes" / "objects" / "skills" / "global_experience_retrieval.md"
+    assert skill_path.exists()
+    assert "agentes session reason \\\n  --observation" in skill_path.read_text(encoding="utf-8")
 
 
 def test_full_experience_reuse_flow(tmp_path: Path, monkeypatch):
@@ -476,6 +483,10 @@ def test_session_capture_flow(tmp_path: Path, monkeypatch):
     assert run.startswith("run_")
     assert (tmp_path / ".agentes" / "tmp" / "codex_session.json").exists()
 
+    stdout_path = tmp_path / "session.out"
+    stderr_path = tmp_path / "session.err"
+    stdout_path.write_text("trace stdout\n", encoding="utf-8")
+    stderr_path.write_text("trace stderr\n", encoding="utf-8")
     trace = invoke(
         [
             "session",
@@ -484,9 +495,15 @@ def test_session_capture_flow(tmp_path: Path, monkeypatch):
             "Recorded a session trace",
             "--type",
             "note",
+            "--stdout",
+            str(stdout_path),
+            "--stderr",
+            str(stderr_path),
         ]
     )
     assert "trace_step=1" in trace.output
+    assert (tmp_path / ".agentes" / "objects" / "blobs" / "stdout" / f"{run}_step_1.out").exists()
+    assert (tmp_path / ".agentes" / "objects" / "blobs" / "stderr" / f"{run}_step_1.err").exists()
 
     evidence = invoke(
         [
@@ -543,3 +560,111 @@ def test_session_capture_flow(tmp_path: Path, monkeypatch):
         ]
     )
     assert "Codex session capture stores reusable lessons" in search.output
+
+
+def test_session_transcript_observe_reason_flow(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    run = invoke(
+        [
+            "session",
+            "start",
+            "--summary",
+            "Record visible session context",
+            "--task-type",
+            "code_editing",
+        ]
+    ).output.strip()
+    transcript_path = tmp_path / ".agentes" / "objects" / "transcripts" / f"{run}.jsonl"
+    assert transcript_path.exists()
+
+    user_message = invoke(
+        [
+            "session",
+            "message",
+            "--role",
+            "user",
+            "--content",
+            "Fix failing tests after schema update",
+        ]
+    )
+    assert "transcript_seq=1" in user_message.output
+    assert "trace_step=1" in user_message.output
+
+    assistant_message_path = tmp_path / "assistant_message.md"
+    assistant_message_path.write_text("I will inspect the failing test output first.", encoding="utf-8")
+    assistant_message = invoke(
+        [
+            "session",
+            "message",
+            "--role",
+            "assistant",
+            "--content-file",
+            str(assistant_message_path),
+        ]
+    )
+    assert "transcript_seq=2" in assistant_message.output
+    assert "trace_step=2" in assistant_message.output
+
+    observe = invoke(
+        [
+            "session",
+            "observe",
+            "--content",
+            "Tests fail with Cannot find module './generated/client'",
+        ]
+    )
+    assert "trace_step=3" in observe.output
+
+    evidence = invoke(
+        [
+            "session",
+            "evidence",
+            "--claim",
+            "After running the generator, tests passed",
+            "--strength",
+            "strong",
+        ]
+    ).output.strip()
+
+    reason = invoke(
+        [
+            "session",
+            "reason",
+            "--observation",
+            "Generated client import is missing",
+            "--hypothesis",
+            "Generated artifacts may be stale",
+            "--decision",
+            "Run generator before patching imports",
+            "--rejected-alternative",
+            "Patch import path directly :: Generated path appears expected",
+            "--diagnosis",
+            "Regeneration fixed the missing module",
+            "--linked-evidence",
+            evidence,
+        ]
+    )
+    assert "trace_step=4" in reason.output
+
+    transcript_events = read_jsonl(transcript_path)
+    assert [event["role"] for event in transcript_events] == ["user", "assistant"]
+    assert transcript_events[0]["content"] == "Fix failing tests after schema update"
+
+    trace_path = next((tmp_path / ".agentes" / "objects" / "traces").glob("*.jsonl"))
+    trace_events = read_jsonl(trace_path)
+    assert [event["type"] for event in trace_events] == [
+        "message",
+        "message",
+        "observation",
+        "reasoning_summary",
+    ]
+    assert trace_events[0]["transcript_seq"] == 1
+    assert trace_events[2]["content"] == "Tests fail with Cannot find module './generated/client'"
+    assert trace_events[3]["observations"] == ["Generated client import is missing"]
+    assert trace_events[3]["hypotheses"] == ["Generated artifacts may be stale"]
+    assert trace_events[3]["decisions"] == ["Run generator before patching imports"]
+    assert trace_events[3]["rejected_alternatives"] == [
+        {"alternative": "Patch import path directly", "reason": "Generated path appears expected"}
+    ]
+    assert trace_events[3]["linked_evidence"] == [evidence]

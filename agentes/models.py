@@ -33,6 +33,7 @@ class RunManifest(FlexibleModel):
     context: RunContext = Field(default_factory=RunContext)
     status: str = "running"
     trace: TraceRef
+    transcript: Optional[TraceRef] = None
     created_at: str
     finished_at: Optional[str] = None
 
@@ -42,10 +43,38 @@ class TraceEvent(FlexibleModel):
     type: str
     summary: str
     timestamp: str
+    role: Optional[str] = None
+    content: Optional[str] = None
+    visibility: Optional[str] = None
+    sensitivity: Optional[str] = None
     command: Optional[str] = None
     exit_code: Optional[int] = None
     stdout_path: Optional[str] = None
     stderr_path: Optional[str] = None
+    transcript_seq: Optional[int] = None
+    observations: Optional[List[str]] = None
+    hypotheses: Optional[List[str]] = None
+    decisions: Optional[List[str]] = None
+    rejected_alternatives: Optional[List[Dict[str, str]]] = None
+    diagnosis: Optional[str] = None
+    linked_evidence: Optional[List[str]] = None
+
+
+class TranscriptEvent(FlexibleModel):
+    seq: int
+    type: str
+    timestamp: str
+    role: Optional[str] = None
+    content: Optional[str] = None
+    tool: Optional[str] = None
+    command: Optional[str] = None
+    exit_code: Optional[int] = None
+    summary: Optional[str] = None
+    stdout_path: Optional[str] = None
+    stderr_path: Optional[str] = None
+    visibility: str = "visible"
+    sensitivity: str = "normal"
+    linked_evidence: Optional[List[str]] = None
 
 
 class EvidenceSource(FlexibleModel):

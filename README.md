@@ -1,6 +1,6 @@
 # AgentES
 
-AgentES is a local-first, evidence-backed experience store for coding and research agents. It stores runs, traces, evidence, reusable experiences, and reuse events in a project-local `.agentes/` directory.
+AgentES is a local-first, evidence-backed experience store for coding and research agents. It stores runs, transcripts, traces, evidence, reusable experiences, and reuse events in a project-local `.agentes/` directory.
 
 The MVP implements the core loop from `agentes_design.html`:
 
@@ -112,6 +112,7 @@ agentes reuse record \
   objects/
     runs/
     traces/
+    transcripts/
     evidence/
     experiences/
     blobs/
@@ -131,8 +132,24 @@ AgentES includes built-in session commands for Codex-style memory capture:
 
 ```bash
 agentes session start --summary "<task>" --task-type code_editing
+agentes session message --role user --content "<visible user message>"
+agentes session message --role assistant --content-file /tmp/assistant-message.md
+agentes session message --role assistant --content "<visible assistant response>"
 agentes session search --query "<task symptoms>"
+agentes session trace \
+  --summary "<tool or command result>" \
+  --type tool_result \
+  --command "<command>" \
+  --exit-code 0 \
+  --stdout /tmp/stdout.txt \
+  --stderr /tmp/stderr.txt
+agentes session observe --content "<visible observation>"
+agentes session reason \
+  --observation "<what was observed>" \
+  --hypothesis "<explicit hypothesis>" \
+  --decision "<decision made>" \
+  --rejected-alternative "<alternative :: reason>"
 agentes session capture --title "<lesson>" ...
 ```
 
-Use it to start an AgentES run at the beginning of a substantial Codex session, search prior experience before planning, record important trace points, and capture evidence-backed reusable lessons at the end.
+Use it to start an AgentES run at the beginning of a substantial Codex session, search prior experience before planning, store visible transcript messages in `.agentes/objects/transcripts/<run_id>.jsonl`, record important trace points, and capture evidence-backed reusable lessons at the end. Use `--content-file` for long visible messages. AgentES stores visible transcript and structured reasoning summaries; it does not store hidden chain-of-thought.
