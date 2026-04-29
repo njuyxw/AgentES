@@ -198,18 +198,31 @@ and structured reasoning summaries — never hidden chain-of-thought.
 
 ### 6. Record reuse outcome
 
+If you applied an experience during this session, record the outcome so future
+ranking learns from it. Two equivalent ways:
+
 ```bash
-agentes reuse record --experience <exp_id> --run "$RUN" --result success
+# Inline shortcut — auto-binds to the active session run:
+agentes session reuse --experience <exp_id> --result success --notes "<one line why>"
+
+# Or, batch them when finishing the session (see step 8):
+agentes session finish --status success \\
+  --reused exp_001=success \\
+  --reused exp_002=partial:patch-applied-but-not-root-cause
 ```
 
 ### 7. Capture a new reusable lesson with evidence
+
+A single session run can capture multiple lessons; the run stays open until
+you explicitly call `session finish`.
 
 ```bash
 EV=$(agentes session evidence \\
   --type command_result \\
   --claim "Tests passed after regenerating client" \\
   --strength strong \\
-  --command "pnpm test" --exit-code 0)
+  --command "pnpm test" --exit-code 0 \\
+  --stdout /tmp/test_stdout.txt --stderr /tmp/test_stderr.txt)
 
 agentes session capture \\
   --title "Regenerate client when schema changes" \\
@@ -222,19 +235,37 @@ agentes session capture \\
   --required-check "Inspect package.json for generator script" \\
   --validation-after-reuse "Run relevant test suite" \\
   --evidence "$EV"
-
-agentes session finish --status success
 ```
+
+`session evidence` supports `--stdout` and `--stderr` so the raw artifact is
+copied into `.agentes/objects/blobs/`. Repeat `session capture` as many times
+as needed within one run.
+
+### 8. Finish the session
+
+```bash
+agentes session finish --status success \\
+  --reused <exp_id_a>=success \\
+  --reused <exp_id_b>=partial:why-it-only-half-helped
+```
+
+The `--reused` flag is repeatable and accepts `exp_id=result[:notes]` where
+`result` is `success`, `partial`, or `failure`.
 
 ## Rules
 
-1. Do not reuse an experience based only on title or summary.
+1. Do not reuse an experience based only on title or summary; the search card
+   shows the first `applies-when` line — read it before opening.
 2. Before any risky change, run a `--negative-only` search.
 3. Convert experiences into local checklists with `experience adapt`.
-4. Always record the reuse outcome so future ranking can learn.
+4. Always record the reuse outcome (via `session reuse` or
+   `session finish --reused`) so future ranking can learn. The search card's
+   `reuses: N/M` count comes from these records.
 5. Capture a new lesson only with linked evidence (a passing/failing command
    with stdout/stderr, a verified fact, or a metric measurement).
 6. Store visible context only — no hidden chain-of-thought.
+7. One `session start` may host many `session capture` calls; do not call
+   `session finish` between captures.
 """
 
 

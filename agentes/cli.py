@@ -662,6 +662,8 @@ def session_evidence(
     type_: str = typer.Option("session_result", "--type"),
     command: Optional[str] = typer.Option(None, "--command"),
     exit_code: Optional[int] = typer.Option(None, "--exit-code"),
+    stdout: Optional[Path] = typer.Option(None, "--stdout", exists=True, dir_okay=False),
+    stderr: Optional[Path] = typer.Option(None, "--stderr", exists=True, dir_okay=False),
     trace_step: Optional[int] = typer.Option(None, "--trace-step"),
     run: Optional[str] = typer.Option(None, "--run"),
 ) -> None:
@@ -677,11 +679,40 @@ def session_evidence(
             strength=strength,
             command=command,
             exit_code=exit_code,
+            stdout=stdout,
+            stderr=stderr,
             trace_step=trace_step,
         )
     except Exception as exc:
         handle_session_error(exc)
     typer.echo(evidence_id)
+
+
+@session_app.command("reuse")
+def session_reuse(
+    experience: str = typer.Option(..., "--experience", help="Experience id (e.g. exp_20260428_001)."),
+    result: str = typer.Option(..., "--result", help="Reuse outcome: success, failure, or partial."),
+    notes: str = typer.Option("", "--notes"),
+    run: Optional[str] = typer.Option(None, "--run", help="Override active session run id."),
+) -> None:
+    """Record that the active session reused an experience.
+
+    Auto-binds to the active session run, so unlike `agentes reuse record`
+    you do not need to pass the run id explicitly.
+    """
+    try:
+        store = session_ops.ensure_session_store()
+        run_id = session_ops.current_run(store, run)
+        reuse_id = session_ops.record_reuse(
+            store,
+            experience_id=experience,
+            run_id=run_id,
+            result=result,
+            notes=notes,
+        )
+    except Exception as exc:
+        handle_session_error(exc)
+    typer.echo(reuse_id)
 
 
 @session_app.command("capture")
@@ -767,14 +798,38 @@ def session_capture(
 def session_finish(
     status: str = typer.Option("success", "--status"),
     run: Optional[str] = typer.Option(None, "--run"),
+    reused: Optional[List[str]] = typer.Option(
+        None,
+        "--reused",
+        help=(
+            "Repeatable. Record an experience reuse before closing the run. "
+            "Format: exp_id=result[:notes]. Example: --reused exp_20260428_001=success "
+            "--reused exp_20260428_002=partial:fixed-setup-but-not-agent"
+        ),
+    ),
 ) -> None:
-    """Finish the active session run."""
+    """Finish the active session run, optionally recording reused experiences."""
     if status not in {"success", "failure", "partial"}:
         typer.echo("Invalid status. Use one of: success, failure, partial.", err=True)
         raise typer.Exit(code=1)
     try:
         store = session_ops.ensure_session_store()
         run_id = session_ops.current_run(store, run)
+        recorded: list[tuple[str, str, str]] = []
+        for spec in reused or []:
+            try:
+                exp_id, result, notes = session_ops.parse_reused_spec(spec)
+            except ValueError as exc:
+                typer.echo(str(exc), err=True)
+                raise typer.Exit(code=1)
+            session_ops.record_reuse(
+                store,
+                experience_id=exp_id,
+                run_id=run_id,
+                result=result,
+                notes=notes,
+            )
+            recorded.append((exp_id, result, notes))
         session_ops.finish_run(store, run_id, status)
         state = session_ops.read_state(store)
         state["finished_at"] = iso_now()
@@ -783,6 +838,9 @@ def session_finish(
     except Exception as exc:
         handle_session_error(exc)
     typer.echo(run_id)
+    for exp_id, result, notes in recorded:
+        suffix = f" notes={notes}" if notes else ""
+        typer.echo(f"  reused {exp_id}={result}{suffix}")
 
 
 app.add_typer(run_app, name="run")

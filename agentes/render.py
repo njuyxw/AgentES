@@ -6,22 +6,47 @@ from typing import Any
 from .storage import as_list, list_to_markdown
 
 
+def _first_line(text: str | None) -> str:
+    if not text:
+        return ""
+    for raw in text.split("\n"):
+        line = raw.strip().lstrip("-•*").strip()
+        if line:
+            return line
+    return ""
+
+
+def _row_get(row: sqlite3.Row, key: str, default: int = 0) -> int:
+    try:
+        value = row[key]
+    except (KeyError, IndexError):
+        return default
+    return int(value) if value is not None else default
+
+
 def search_cards(rows: list[sqlite3.Row]) -> str:
     if not rows:
         return "No experiences found.\n"
     chunks: list[str] = []
     for row in rows:
-        chunks.append(
-            "\n".join(
-                [
-                    row["id"],
-                    f"  title: {row['title']}",
-                    f"  status: {row['status']} | confidence: {row['confidence']} | evidence: {row['evidence_count']}",
-                    f"  summary: {row['summary']}",
-                    f"  next: agentes experience open {row['id']} --reuse && agentes experience open {row['id']} --evidence",
-                ]
-            )
+        success_reuses = _row_get(row, "success_reuses")
+        total_reuses = _row_get(row, "total_reuses")
+        applies = _first_line(row["applies_when"]) if "applies_when" in row.keys() else ""
+        lines = [
+            row["id"],
+            f"  title: {row['title']}",
+            (
+                f"  status: {row['status']} | confidence: {row['confidence']} "
+                f"| evidence: {row['evidence_count']} | reuses: {success_reuses}/{total_reuses}"
+            ),
+            f"  summary: {row['summary']}",
+        ]
+        if applies:
+            lines.append(f"  applies-when: {applies}")
+        lines.append(
+            f"  next: agentes experience open {row['id']} --reuse && agentes experience open {row['id']} --evidence"
         )
+        chunks.append("\n".join(lines))
     return "\n\n".join(chunks) + "\n"
 
 

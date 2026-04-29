@@ -834,3 +834,126 @@ def test_session_transcript_observe_reason_flow(tmp_path: Path, monkeypatch):
         {"alternative": "Patch import path directly", "reason": "Generated path appears expected"}
     ]
     assert trace_events[3]["linked_evidence"] == [evidence]
+
+
+def test_session_evidence_accepts_stdout_stderr(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    invoke(["session", "start", "--summary", "evidence blob test", "--task-type", "code_editing"])
+    out_path = tmp_path / "ev.out"
+    err_path = tmp_path / "ev.err"
+    out_path.write_text("hello stdout\n", encoding="utf-8")
+    err_path.write_text("hello stderr\n", encoding="utf-8")
+    result = invoke(
+        [
+            "session",
+            "evidence",
+            "--claim",
+            "stdout/stderr should be persisted as blobs",
+            "--strength",
+            "strong",
+            "--stdout",
+            str(out_path),
+            "--stderr",
+            str(err_path),
+        ]
+    )
+    ev_id = result.output.strip().splitlines()[-1]
+    assert ev_id.startswith("ev_")
+    blob_out = tmp_path / ".agentes" / "objects" / "blobs" / "stdout" / f"{ev_id}.out"
+    blob_err = tmp_path / ".agentes" / "objects" / "blobs" / "stderr" / f"{ev_id}.err"
+    assert blob_out.read_text(encoding="utf-8") == "hello stdout\n"
+    assert blob_err.read_text(encoding="utf-8") == "hello stderr\n"
+    manifest = (tmp_path / ".agentes" / "objects" / "evidence" / f"{ev_id}.yaml").read_text(encoding="utf-8")
+    assert "stdout_path:" in manifest
+    assert "stderr_path:" in manifest
+
+
+def test_session_capture_keeps_run_open_for_multiple_lessons(tmp_path: Path, monkeypatch):
+    """Capturing two lessons in one session must not spawn ghost run_ids."""
+    monkeypatch.chdir(tmp_path)
+    run = invoke(["session", "start", "--summary", "multi-capture", "--task-type", "code_editing"]).output.strip()
+
+    capture_args = lambda title: [  # noqa: E731
+        "session", "capture",
+        "--title", title,
+        "--task-type", "code_editing",
+        "--domain", "python",
+        "--actions", "Did stuff",
+        "--outcome", "Stuff worked",
+        "--diagnosis", "Stuff was wrong",
+        "--applies-when", "future stuff",
+        "--required-check", "check stuff",
+        "--validation-after-reuse", "test stuff",
+    ]
+    out1 = invoke(capture_args("Lesson one")).output
+    out2 = invoke(capture_args("Lesson two")).output
+    assert f"run={run}" in out1
+    assert f"run={run}" in out2  # second capture must reuse the same run
+
+    state = json.loads((tmp_path / ".agentes" / "tmp" / "codex_session.json").read_text(encoding="utf-8"))
+    assert state.get("finished_at") in (None, "")  # run still open
+    assert state["run_id"] == run
+    assert len(state.get("captured_experiences", [])) == 2
+
+
+def test_session_finish_records_reused_experiences(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    invoke(["session", "start", "--summary", "first", "--task-type", "code_editing"])
+    base_capture = [
+        "session", "capture",
+        "--title", "Reusable lesson",
+        "--task-type", "code_editing",
+        "--domain", "python",
+        "--actions", "do",
+        "--outcome", "ok",
+        "--diagnosis", "because",
+        "--applies-when", "always",
+        "--required-check", "check",
+        "--validation-after-reuse", "verify",
+    ]
+    cap_out = invoke(base_capture).output
+    exp_id = next(line.split("=", 1)[1] for line in cap_out.splitlines() if line.startswith("experience="))
+    invoke(["session", "finish", "--status", "success"])
+
+    # New session reuses the lesson and declares it on finish.
+    run2 = invoke(["session", "start", "--summary", "reuser", "--task-type", "code_editing"]).output.strip()
+    finish = invoke(
+        [
+            "session", "finish",
+            "--status", "success",
+            "--reused", f"{exp_id}=success:applied verbatim",
+        ]
+    )
+    assert run2 in finish.output
+    assert f"reused {exp_id}=success" in finish.output
+
+    # Search should now show reuses=1/1 in the card.
+    search = invoke(["session", "search", "--query", "reusable lesson"])
+    assert "reuses: 1/1" in search.output
+
+    # Reuse spec validation
+    invoke(["session", "start", "--summary", "again", "--task-type", "code_editing"])
+    bad = runner.invoke(app, ["session", "finish", "--status", "success", "--reused", "noequal"])
+    assert bad.exit_code != 0
+    assert "exp_id=result" in bad.output
+
+
+def test_search_card_shows_applies_when(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    invoke(["session", "start", "--summary", "applies-when test", "--task-type", "code_editing"])
+    invoke(
+        [
+            "session", "capture",
+            "--title", "Specific applies-when lesson",
+            "--task-type", "code_editing",
+            "--domain", "python",
+            "--actions", "did",
+            "--outcome", "fine",
+            "--diagnosis", "ok",
+            "--applies-when", "When the moon is full and the API is thinking-mode",
+            "--required-check", "check",
+            "--validation-after-reuse", "verify",
+        ]
+    )
+    search = invoke(["session", "search", "--query", "applies-when lesson"])
+    assert "applies-when: When the moon is full and the API is thinking-mode" in search.output

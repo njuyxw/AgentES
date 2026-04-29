@@ -64,11 +64,18 @@ def search_experiences(
     if clauses:
         where = " AND " + " AND ".join(clauses)
 
+    reuse_counts = """
+        (SELECT COUNT(*) FROM reuse_events r
+         WHERE r.experience_id = e.id AND r.result = 'success') AS success_reuses,
+        (SELECT COUNT(*) FROM reuse_events r
+         WHERE r.experience_id = e.id) AS total_reuses
+    """
+
     match = fts_query(query)
     if match:
         rows = conn.execute(
             f"""
-            SELECT e.*, bm25(experience_fts) AS score
+            SELECT e.*, bm25(experience_fts) AS score, {reuse_counts}
             FROM experience_fts
             JOIN experiences e ON e.id = experience_fts.experience_id
             WHERE experience_fts MATCH ? {where}
@@ -81,7 +88,7 @@ def search_experiences(
         base_where = "WHERE " + " AND ".join(clauses) if clauses else ""
         rows = conn.execute(
             f"""
-            SELECT e.*, 0.0 AS score
+            SELECT e.*, 0.0 AS score, {reuse_counts}
             FROM experiences e
             {base_where}
             ORDER BY e.evidence_count DESC, e.updated_at DESC

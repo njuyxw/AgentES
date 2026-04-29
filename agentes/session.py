@@ -362,10 +362,14 @@ def create_evidence(
     command: Optional[str] = None,
     exit_code: Optional[int] = None,
     trace_step: Optional[int] = None,
+    stdout: Optional[Path] = None,
+    stderr: Optional[Path] = None,
 ) -> str:
     with db.connect(store) as conn:
         db.run_row(conn, run_id)
         evidence_id = next_id(conn, "ev")
+        stdout_path = copy_blob(store, stdout, "stdout", evidence_id, ".out")
+        stderr_path = copy_blob(store, stderr, "stderr", evidence_id, ".err")
         manifest = EvidenceManifest(
             id=evidence_id,
             type=type_,
@@ -375,6 +379,8 @@ def create_evidence(
             data={
                 "command": command,
                 "exit_code": exit_code,
+                "stdout_path": stdout_path,
+                "stderr_path": stderr_path,
             },
             created_at=iso_now(),
         )
@@ -391,6 +397,68 @@ def create_evidence(
     state.setdefault("evidence", []).append(evidence_id)
     write_state(store, state)
     return evidence_id
+
+
+REUSE_RESULT_CHOICES = {"success", "failure", "partial"}
+
+
+def record_reuse(
+    store: Store,
+    experience_id: str,
+    run_id: str,
+    result: str,
+    notes: str = "",
+) -> str:
+    """Record that the active session reused an experience and update its lifecycle."""
+    if result not in REUSE_RESULT_CHOICES:
+        raise ValueError(
+            f"Invalid reuse result {result!r}. Use one of: {', '.join(sorted(REUSE_RESULT_CHOICES))}."
+        )
+    validate_object_id(experience_id, "experience id")
+    now = iso_now()
+    with db.connect(store) as conn:
+        row = db.experience_row(conn, experience_id)
+        db.run_row(conn, run_id)
+        reuse_id = next_id(conn, "reuse")
+        conn.execute(
+            """
+            INSERT INTO reuse_events (id, experience_id, run_id, result, notes, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (reuse_id, experience_id, run_id, result, notes, now),
+        )
+        if result == "success":
+            conn.execute(
+                "UPDATE experiences SET last_validated_at = ?, updated_at = ? WHERE id = ?",
+                (now, now, experience_id),
+            )
+            manifest_path = store.project_root / row["manifest_path"]
+            manifest = read_yaml(manifest_path)
+            manifest.setdefault("lifecycle", {})
+            manifest["lifecycle"]["last_validated_at"] = now
+            manifest["lifecycle"]["updated_at"] = now
+            write_yaml(manifest_path, manifest)
+    state = read_state(store)
+    state.setdefault("reused_experiences", []).append(
+        {"experience": experience_id, "result": result, "notes": notes}
+    )
+    write_state(store, state)
+    return reuse_id
+
+
+def parse_reused_spec(spec: str) -> tuple[str, str, str]:
+    """Parse a `--reused exp_xxx=result[:notes]` spec into (id, result, notes)."""
+    if "=" not in spec:
+        raise ValueError(
+            f"Invalid --reused spec {spec!r}; expected exp_id=result[:notes]"
+        )
+    exp_id, _, tail = spec.partition("=")
+    exp_id = exp_id.strip()
+    tail = tail.strip()
+    if ":" in tail:
+        result, _, notes = tail.partition(":")
+        return exp_id, result.strip(), notes.strip()
+    return exp_id, tail, ""
 
 
 def import_experience_data(store: Store, raw: dict[str, Any]) -> str:
@@ -582,11 +650,11 @@ def capture_session(
         experience_id = import_experience_data(store, manifest)
     except (ValidationError, ValueError):
         raise
-    finish_run(store, run_id, status)
     state = read_state(store)
     state["last_experience_id"] = experience_id
     state["last_evidence_id"] = evidence_id
-    state["finished_at"] = iso_now()
-    state["status"] = status
+    captured = state.setdefault("captured_experiences", [])
+    if experience_id not in captured:
+        captured.append(experience_id)
     write_state(store, state)
     return experience_id, evidence_id, run_id
